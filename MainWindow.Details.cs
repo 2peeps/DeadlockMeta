@@ -182,6 +182,7 @@ public partial class MainWindow
             var wrap = new WrapPanel();
             foreach (var it in phase.Items)
             {
+                if (wrap.Children.Count >= BuildService.ItemsPerPhase) break;
                 if (catalog == null || !catalog.Items.TryGetValue(it.ItemId, out var info)) continue;
                 var cell = new StackPanel { Margin = new Thickness(0, 0, 12, 4) };
                 cell.Children.Add(ItemTile(info, 52, $"{Pct(it.WinRate)} в {it.Matches.ToString("N0", Thousands)} играх"));

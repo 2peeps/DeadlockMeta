@@ -1,5 +1,6 @@
-# End-to-end check without the game: shows a saved hero-select screenshot in a borderless window on the second
+﻿# End-to-end check without the game: shows a saved hero-select screenshot in a borderless window on the second
 # monitor, points the cursor at a few cards, grabs what is on screen and measures the overlay's CPU use.
+param([string]$AppPath = "$PSScriptRoot\..\app\DeadlockMeta.exe")
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @'
 using System; using System.Runtime.InteropServices;
@@ -27,7 +28,7 @@ Pump 300
 "foreground is test window: $([U]::GetForegroundWindow() -eq $form.Handle)"
 $saved = [Windows.Forms.Cursor]::Position
 $env:DEADLOCKMETA_PROCESS = 'powershell'
-$exe = Start-Process "$PSScriptRoot\..\app\DeadlockMeta.exe" -ArgumentList '--tray' -PassThru
+$exe = Start-Process $AppPath -ArgumentList '--tray' -PassThru
 Pump 15000
 $shots = @(@('abrams', 105, 210), @('ratking', 189, 613), @('empty', 780, 780))
 foreach ($s in $shots) {

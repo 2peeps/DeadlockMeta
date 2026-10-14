@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace DeadlockMeta.Core;
 
-public sealed record UpdateInfo(Version Version, string ZipUrl, string PageUrl);
+public sealed record UpdateInfo(Version Version, string ZipUrl, string PageUrl, string? Sha256);
 
 /// <summary>Checks GitHub Releases for a newer version and swaps the running exe for it.</summary>
 public static class Updater
@@ -31,8 +31,12 @@ public static class Updater
         {
             string name = a.GetProperty("name").GetString() ?? "";
             if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                string? digest = a.TryGetProperty("digest", out var dg) && dg.ValueKind == JsonValueKind.String ? dg.GetString() : null;
                 return new UpdateInfo(latest, a.GetProperty("browser_download_url").GetString()!,
-                    root.GetProperty("html_url").GetString() ?? "");
+                    root.GetProperty("html_url").GetString() ?? "",
+                    digest?.StartsWith("sha256:") == true ? digest[7..] : null);
+            }
         }
         return null;
     }
@@ -67,6 +71,14 @@ public static class Updater
             }
         }
 
+        if (u.Sha256 != null)
+        {
+            // GitHub publishes a checksum for every release file; a damaged or swapped download is not installed.
+            await using var fs = File.OpenRead(zip);
+            string actual = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(fs));
+            if (!actual.Equals(u.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("контрольная сумма архива не совпала");
+        }
         ZipFile.ExtractToDirectory(zip, work);
         string fresh = Directory.GetFiles(work, "DeadlockMeta.exe", SearchOption.AllDirectories).FirstOrDefault()
             ?? throw new InvalidDataException("в архиве нет DeadlockMeta.exe");

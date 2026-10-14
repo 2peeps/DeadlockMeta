@@ -23,7 +23,7 @@ public partial class App : Application
     OverlayWindow? overlay;
     GameWatcher? watcher;
     MainWindow? main;
-    bool loading;
+    bool loading, reloadAgain, reloadForce;
 
     public Settings Settings { get; private set; } = new();
     public MetaData? Data { get; private set; }
@@ -54,6 +54,13 @@ public partial class App : Application
         {
             int hero = e.Args.Skip(2).Select(a => a.StartsWith("hero=") && int.TryParse(a[5..], out int h) ? h : 0).DefaultIfEmpty(0).Max();
             await Screenshot(e.Args[1], e.Args.Contains("settings"), hero);
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Contains("--selftest-builds"))
+        {
+            await SelfTestBuilds(e.Args.Contains("high"));
             Shutdown();
             return;
         }
@@ -169,7 +176,13 @@ public partial class App : Application
     /// <summary>Loads heroes and stats (from the cache when fresh, unless forced) and rebuilds the card matcher.</summary>
     public async Task Reload(bool force)
     {
-        if (loading) return;
+        if (loading)
+        {
+            // A settings change while a load is running must not be lost: run once more when it finishes.
+            reloadAgain = true;
+            reloadForce |= force;
+            return;
+        }
         loading = true;
         try
         {
@@ -194,6 +207,13 @@ public partial class App : Application
             Status = Data == null ? "Нет связи с сервером статистики" : "Не удалось обновить, показаны прежние данные";
         }
         finally { loading = false; }
+        if (reloadAgain)
+        {
+            bool again = reloadForce;
+            reloadAgain = reloadForce = false;
+            await Reload(again);
+            return;
+        }
         if (tray != null) tray.Text = "Deadlock Meta · " + (Status.Length > 45 ? Status[..45] : Status);
         DataChanged?.Invoke();
     }
@@ -243,6 +263,46 @@ public partial class App : Application
         enc.Frames.Add(BitmapFrame.Create(rtb));
         using var fs = File.Create(path);
         enc.Save(fs);
+    }
+
+    // DeadlockMeta.exe --selftest-builds [high]: loads the builds panel data for every hero with stats and writes
+    // data\selftest.txt (builds found, whether each belongs to the hero, unknown item IDs, timing).
+    async Task SelfTestBuilds(bool high)
+    {
+        var sb = new StringBuilder();
+        int failed = 0;
+        try
+        {
+            var d = await MetaData.Load(Settings, false);
+            var cat = await ItemCatalog.Load();
+            sb.AppendLine($"items in catalog: {cat.Items.Count}; scope: {(high ? "high ranks" : "all ranks")}, {Settings.StatDays} days");
+            foreach (var id in d.StatsAll.Keys.OrderBy(k => d.Heroes.GetValueOrDefault(k)?.Name))
+            {
+                string name = d.Heroes.GetValueOrDefault(id)?.Name ?? id.ToString();
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    var det = await BuildService.Load(id, Settings, high);
+                    var buildItems = det.Builds.SelectMany(b => b.Categories.SelectMany(c => c.ItemIds)).ToList();
+                    int unknown = buildItems.Count(i => !cat.Items.ContainsKey(i));
+                    var phaseShown = det.Phases.Select(p => p.Items.Count(i => cat.Items.ContainsKey(i.ItemId))).ToList();
+                    bool problem = det.Builds.Count == 0 || det.Builds.Any(b => b.Categories.Count == 0) || phaseShown.Any(n => n < 3);
+                    if (problem) failed++;
+                    sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                        $"{(problem ? "!!" : "ok")} {name,-14} builds={det.Builds.Count} " +
+                        $"[{string.Join(" | ", det.Builds.Select(b => $"{b.Id} v{b.Version} {b.WinRate:F1}% n={b.Matches}"))}] " +
+                        $"items={buildItems.Count} unknown={unknown} phases={string.Join("/", phaseShown)} {sw.ElapsedMilliseconds}ms"));
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    sb.AppendLine($"!! {name,-14} FAILED: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex) { sb.AppendLine("FAILED: " + ex); failed++; }
+        sb.AppendLine($"heroes with problems: {failed}");
+        File.WriteAllText(Path.Combine(Settings.DataDir, "selftest.txt"), sb.ToString());
     }
 
     // DeadlockMeta.exe --test screenshot.png [clientHeight]: writes what the matcher sees on a saved screenshot.

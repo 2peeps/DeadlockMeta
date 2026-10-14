@@ -65,7 +65,8 @@ sealed class GameWatcher(Settings settings)
                         // The grid almost always sits where it was last time, so that spot is checked first and often.
                         if (settings.GridClientW == client.Width && settings.GridClientH == client.Height)
                         {
-                            var hint = GridGeom.Make(client.Height / 1080.0, 0, 0, 0) with { X0 = settings.GridX0, Y0 = settings.GridY0 };
+                            double hk = settings.GridScale > 0 ? settings.GridScale : client.Height / 1080.0;
+                            var hint = GridGeom.Make(hk, 0, 0, 0) with { X0 = settings.GridX0, Y0 = settings.GridY0 };
                             if (CaptureGrid(grabber, client, hint, 2, frame) && m.Confirm(frame, hint))
                             {
                                 geom = hint; locked = true; how = "remembered position";
@@ -79,7 +80,7 @@ sealed class GameWatcher(Settings settings)
                             {
                                 locked = true; how = "full search";
                                 settings.GridClientW = client.Width; settings.GridClientH = client.Height;
-                                settings.GridX0 = geom.X0; settings.GridY0 = geom.Y0;
+                                settings.GridX0 = geom.X0; settings.GridY0 = geom.Y0; settings.GridScale = geom.Scale;
                                 settings.Save();
                             }
                         }
@@ -123,7 +124,7 @@ sealed class GameWatcher(Settings settings)
 
                         if (locked && over && known[hr * Matcher.Cols + hc] != 0)
                         {
-                            double k = client.Height / 1080.0;
+                            double k = geom.Scale;
                             hover = new HoverInfo(known[hr * Matcher.Cols + hc],
                                 client.X + (int)(geom.X0 + PanelRefDx * k), client.Y + (int)(PanelRefY * k), k);
                         }

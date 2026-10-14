@@ -16,6 +16,9 @@ public record struct GridGeom(double X0, double Y0, double PitchX, double PitchY
     public static GridGeom Make(double k, double anchorX, double dx, double dy) =>
         new(anchorX + RefX0 * k + dx, RefY0 * k + dy, RefPitchX * k, RefPitchY * k, RefCardW * k, RefCardH * k);
 
+    /// <summary>UI scale of the screen the grid was found on (1 at 1080p).</summary>
+    public readonly double Scale => PitchX / RefPitchX;
+
     public readonly bool CellAt(double x, double y, out int col, out int row)
     {
         col = (int)Math.Floor((x - X0 + (PitchX - CardW) / 2) / PitchX);
@@ -121,24 +124,36 @@ public sealed class Matcher
     public bool Confirm(Frame f, GridGeom g) => MatchGrid(f, g, 2, 2, null, out _) >= MinCards;
 
     /// <summary>
-    /// Looks for the grid on a full client-area frame. The UI is assumed to scale with the window height;
-    /// the horizontal anchor and a small offset are searched.
+    /// Looks for the grid on a full client-area frame: tries the likely UI layouts for the window's aspect ratio
+    /// and a small offset around each.
     /// </summary>
     public bool FindGrid(Frame f, int clientW, int clientH, out GridGeom found)
     {
         found = default;
-        double k = clientH / 1080.0;
-        var anchors = new List<double> { 0 };
+        // Layouts to try: the UI scaled with the window height (16:9 and wider; on ultrawide the 16:9 area may sit
+        // at the left or in the middle), and, for screens narrower than 16:9 (16:10, 4:3), scaled with the width
+        // instead, with the spare height above the UI or split above and below.
+        var layouts = new List<(double K, double Ax, double Ay)>();
+        double kh = clientH / 1080.0;
+        layouts.Add((kh, 0, 0));
         double wide = (clientW - clientH * 16.0 / 9.0) / 2;
-        if (Math.Abs(wide) > 2) anchors.Add(wide);
+        if (wide > 2) layouts.Add((kh, wide, 0));
+        if (wide < -2)
+        {
+            double kw = clientW / 1920.0, spare = clientH - 1080 * kw;
+            layouts.Add((kw, 0, 0));
+            layouts.Add((kw, 0, spare / 2));
+            layouts.Add((kw, 0, spare));
+        }
 
-        double best = 0, bestA = 0, bestDx = 0, bestDy = 0;
-        foreach (double a in anchors)
+        double best = 0, bestDx = 0, bestDy = 0;
+        var bestL = layouts[0];
+        foreach (var l in layouts)
             for (int dy = -24; dy <= 24; dy += 6)
                 for (int dx = -24; dx <= 24; dx += 6)
                 {
-                    if (MatchGrid(f, GridGeom.Make(k, a, dx * k, dy * k), 2, 2, null, out double total) < 4) continue;
-                    if (total > best) { best = total; bestA = a; bestDx = dx; bestDy = dy; }
+                    if (MatchGrid(f, GridGeom.Make(l.K, l.Ax, dx * l.K, l.Ay + dy * l.K), 2, 2, null, out double total) < 4) continue;
+                    if (total > best) { best = total; bestL = l; bestDx = dx; bestDy = dy; }
                 }
         if (best == 0) return false;
 
@@ -146,10 +161,10 @@ public sealed class Matcher
         for (double dy = bestDy - 4; dy <= bestDy + 4; dy += 1)
             for (double dx = bestDx - 4; dx <= bestDx + 4; dx += 1)
             {
-                MatchGrid(f, GridGeom.Make(k, bestA, dx * k, dy * k), 2, 1, null, out double total);
+                MatchGrid(f, GridGeom.Make(bestL.K, bestL.Ax, dx * bestL.K, bestL.Ay + dy * bestL.K), 2, 1, null, out double total);
                 if (total > best) { best = total; fineDx = dx; fineDy = dy; }
             }
-        found = GridGeom.Make(k, bestA, fineDx * k, fineDy * k);
+        found = GridGeom.Make(bestL.K, bestL.Ax, fineDx * bestL.K, bestL.Ay + fineDy * bestL.K);
         return MatchGrid(f, found, 2, 1, null, out _) >= MinCards;
     }
 }

@@ -37,21 +37,38 @@ public sealed class MetaData
     internal static async Task<string> Fetch(string url, string cacheName, bool force, TimeSpan? maxAge = null)
     {
         string path = Path.Combine(Settings.DataDir, cacheName);
-        bool cached = File.Exists(path);
-        if (cached && !force && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < (maxAge ?? MaxAge))
-            return await File.ReadAllTextAsync(path);
+        string? cached = File.Exists(path) ? await File.ReadAllTextAsync(path) : null;
+        if (cached != null && !IsJson(cached))
+        {
+            Log.Write($"cache {cacheName} is damaged, downloading again");
+            cached = null;
+        }
+        if (cached != null && !force && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < (maxAge ?? MaxAge))
+            return cached;
         try
         {
             string body = await Http.GetStringAsync(url);
-            await File.WriteAllTextAsync(path, body);
+            // A proxy or captive portal can answer with an HTML page; that must not replace a good cache.
+            if (!IsJson(body)) throw new InvalidDataException("the server did not return JSON");
+            Files.WriteAtomic(path, body);
             return body;
         }
         catch (Exception e)
         {
             Log.Write($"fetch failed {url}: {e.Message}");
-            if (cached) return await File.ReadAllTextAsync(path);
+            if (cached != null) return cached;
             throw;
         }
+    }
+
+    static bool IsJson(string text)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(text);
+            return true;
+        }
+        catch (JsonException) { return false; }
     }
 
     static Dictionary<int, HeroStat> ParseStats(string json)

@@ -63,7 +63,8 @@ public sealed record HeroDetails(List<BuildInfo> Builds, List<GamePhase> Phases)
 /// <summary>Best community builds and best items per game phase for one hero, by real match results.</summary>
 public static class BuildService
 {
-    const int BuildCount = 3, ItemsPerPhase = 6;
+    const int BuildCount = 3;
+    public const int ItemsPerPhase = 6;
     static readonly (string Title, int From, int To)[] Phases =
         [("НАЧАЛО · 0–10 МИН", 0, 600), ("СЕРЕДИНА · 10–25 МИН", 600, 1500), ("КОНЕЦ · 25+ МИН", 1500, 0)];
 
@@ -111,16 +112,24 @@ public static class BuildService
             .Select(e => (Id: (int)e.GetProperty("hero_build_id").GetInt64(), Wins: e.GetProperty("wins").GetInt64(),
                 Matches: e.GetProperty("matches").GetInt64()))
             .OrderByDescending(b => Wilson(b.Wins, b.Matches))
-            .Take(BuildCount).ToList();
+            // A few spares: a build can be deleted or its lookup can fail, and the panel should still show three.
+            .Take(BuildCount * 2).ToList();
         if (top.Count == 0) return [];
 
         // Build IDs are only unique per hero (the game also searches them inside one hero's builds):
         // 262104 is both a Haze and a Dynamo build. So the lookup is narrowed to this hero.
-        var details = await Task.WhenAll(top.Select(b =>
-            Get($"{MetaData.Api}builds?build_id={b.Id}&hero_id={heroId}&only_latest=true")));
+        var details = await Task.WhenAll(top.Select(async b =>
+        {
+            try { return await Get($"{MetaData.Api}builds?build_id={b.Id}&hero_id={heroId}&only_latest=true"); }
+            catch (Exception e)
+            {
+                Log.Write($"build {heroId}/{b.Id}: {e.Message}");
+                return "[]";
+            }
+        }));
         var authors = new Dictionary<long, string>();
         var builds = new List<(int Id, int Version, long Author, string Name, List<BuildCategory> Cats, long Wins, long Matches)>();
-        for (int i = 0; i < top.Count; i++)
+        for (int i = 0; i < top.Count && builds.Count < BuildCount; i++)
         {
             using var doc = JsonDocument.Parse(details[i]);
             var match = doc.RootElement.EnumerateArray()
@@ -145,6 +154,7 @@ public static class BuildService
                 cats, top[i].Wins, top[i].Matches));
         }
 
+        if (builds.Count > 0)
         try
         {
             string ids = string.Join(",", builds.Select(b => b.Author).Distinct());
@@ -171,7 +181,8 @@ public static class BuildService
         long floor = Math.Max(50, (rows.Count > 0 ? rows.Max(r => r.Matches) : 0) / 20);
         var best = rows.Where(r => r.Matches >= floor)
             .OrderByDescending(r => Wilson(r.Wins, r.Matches))
-            .Take(ItemsPerPhase)
+            // Twice as many as shown: the panel skips IDs that are not shop items.
+            .Take(ItemsPerPhase * 2)
             .Select(r => new PhaseItem(r.Id, 100.0 * r.Wins / r.Matches, r.Matches))
             .ToList();
         return new GamePhase(title, best);
