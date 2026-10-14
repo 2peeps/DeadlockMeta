@@ -60,7 +60,10 @@ public partial class App : Application
 
         if (e.Args.Contains("--selftest-builds"))
         {
-            await SelfTestBuilds(e.Args.Contains("high"));
+            // rank=N overrides the rank filter for this run only (0 = all ranks).
+            foreach (var a in e.Args)
+                if (a.StartsWith("rank=") && int.TryParse(a[5..], out int badge)) Settings.HighBadge = badge;
+            await SelfTestBuilds();
             Shutdown();
             return;
         }
@@ -227,9 +230,10 @@ public partial class App : Application
             return;
         }
         string name = d.Heroes.TryGetValue(hover.HeroId, out var hi) ? hi.Name : "?";
-        HeroStat? high = d.StatsHigh.TryGetValue(hover.HeroId, out var s1) ? s1 : null;
+        HeroStat? ranked = d.StatsRank.TryGetValue(hover.HeroId, out var s1) ? s1 : null;
         HeroStat? all = d.StatsAll.TryGetValue(hover.HeroId, out var s2) ? s2 : null;
-        overlay.ShowHero(name, high, all, hover.PanelX, hover.PanelY, hover.Scale);
+        string? rank = d.RankBadge > 0 ? Core.Settings.RankName(d.RankBadge) : null;
+        overlay.ShowHero(name, rank, ranked, all, hover.PanelX, hover.PanelY, hover.Scale);
     }
 
     // DeadlockMeta.exe --shot out.png [settings] [hero=ID]: renders the main window off-screen into a PNG (for checking the UI).
@@ -265,9 +269,9 @@ public partial class App : Application
         enc.Save(fs);
     }
 
-    // DeadlockMeta.exe --selftest-builds [high]: loads the builds panel data for every hero with stats and writes
+    // DeadlockMeta.exe --selftest-builds [rank=N]: loads the builds panel data for every hero with stats and writes
     // data\selftest.txt (builds found, whether each belongs to the hero, unknown item IDs, timing).
-    async Task SelfTestBuilds(bool high)
+    async Task SelfTestBuilds()
     {
         var sb = new StringBuilder();
         int failed = 0;
@@ -275,14 +279,14 @@ public partial class App : Application
         {
             var d = await MetaData.Load(Settings, false);
             var cat = await ItemCatalog.Load();
-            sb.AppendLine($"items in catalog: {cat.Items.Count}; scope: {(high ? "high ranks" : "all ranks")}, {Settings.StatDays} days");
+            sb.AppendLine($"items in catalog: {cat.Items.Count}; ranks: {Core.Settings.RankName(Settings.HighBadge)}, {Settings.StatDays} days");
             foreach (var id in d.StatsAll.Keys.OrderBy(k => d.Heroes.GetValueOrDefault(k)?.Name))
             {
                 string name = d.Heroes.GetValueOrDefault(id)?.Name ?? id.ToString();
                 var sw = Stopwatch.StartNew();
                 try
                 {
-                    var det = await BuildService.Load(id, Settings, high);
+                    var det = await BuildService.Load(id, Settings);
                     var buildItems = det.Builds.SelectMany(b => b.Categories.SelectMany(c => c.ItemIds)).ToList();
                     int unknown = buildItems.Count(i => !cat.Items.ContainsKey(i));
                     var phaseShown = det.Phases.Select(p => p.Items.Count(i => cat.Items.ContainsKey(i.ItemId))).ToList();

@@ -23,7 +23,11 @@ public sealed class MetaData
 
     public Dictionary<int, HeroInfo> Heroes { get; } = [];
     public Dictionary<int, HeroStat> StatsAll { get; private set; } = [];
-    public Dictionary<int, HeroStat> StatsHigh { get; private set; } = [];
+    /// <summary>Stats for the selected rank filter; the same as StatsAll when that filter is "all ranks".</summary>
+    public Dictionary<int, HeroStat> StatsRank { get; private set; } = [];
+    public int RankBadge { get; private set; }
+    /// <summary>Matches behind StatsRank: shows how thin the data gets at the top ranks.</summary>
+    public long RankMatches { get; private set; }
     public DateTime Updated { get; private set; }
     public int StatDays { get; private set; }
 
@@ -109,9 +113,13 @@ public sealed class MetaData
         string q = $"{Api}analytics/hero-stats?min_unix_timestamp={since}";
         string allFile = $"stats_all_{s.StatDays}.json";
         var all = Fetch(q, allFile, force);
-        var high = Fetch($"{q}&min_average_badge={s.HighBadge}", $"stats_high_{s.StatDays}_{s.HighBadge}.json", force);
+        var ranked = s.HighBadge > 0
+            ? Fetch($"{q}&min_average_badge={s.HighBadge}", $"stats_high_{s.StatDays}_{s.HighBadge}.json", force) : null;
         d.StatsAll = ParseStats(await all);
-        d.StatsHigh = ParseStats(await high);
+        d.StatsRank = ranked != null ? ParseStats(await ranked) : d.StatsAll;
+        d.RankBadge = s.HighBadge;
+        // Each match is counted once per player.
+        d.RankMatches = d.StatsRank.Values.Sum(x => x.Matches) / 12;
         d.Updated = File.GetLastWriteTime(Path.Combine(Settings.DataDir, allFile));
 
         await d.DownloadCards();

@@ -84,9 +84,11 @@ sealed class OverlayWindow : Window
             | Native.WS_EX_LAYERED | Native.WS_EX_NOACTIVATE);
     }
 
-    void Row(int r, string caption, HeroStat? s)
+    void Row(int r, string? caption, HeroStat? s)
     {
-        label[r].Text = caption;
+        var shown = caption == null ? Visibility.Collapsed : Visibility.Visible;
+        label[r].Visibility = win[r].Visibility = pick[r].Visibility = shown;
+        label[r].Text = caption ?? "";
         if (s is { } st)
         {
             win[r].Text = st.WinRate.ToString("F1", CultureInfo.InvariantCulture) + "%";
@@ -100,10 +102,11 @@ sealed class OverlayWindow : Window
     }
 
     /// <summary>screenX/screenY are physical pixels; k is the UI scale of the game (window height / 1080).</summary>
-    public void ShowHero(string heroName, HeroStat? high, HeroStat? all, int screenX, int screenY, double k)
+    /// <param name="rankName">The selected rank filter, or null when it is "all ranks" (then only that row is shown).</param>
+    public void ShowHero(string heroName, string? rankName, HeroStat? ranked, HeroStat? all, int screenX, int screenY, double k)
     {
         name.Text = heroName.ToUpperInvariant();
-        Row(0, "Высокие ранги", high);
+        Row(0, rankName, ranked);
         Row(1, "Все ранги", all);
         // WPF already applies the Windows display scale, so it is divided out to keep the panel tied to the game UI.
         scale.ScaleX = scale.ScaleY = Math.Max(0.6, k) / VisualTreeHelper.GetDpi(this).DpiScaleX;

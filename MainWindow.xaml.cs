@@ -46,7 +46,17 @@ public partial class MainWindow : Window
         VersionText.Text = "Версия " + typeof(App).Assembly.GetName().Version?.ToString(3);
         OverlayToggle.IsChecked = app.Settings.OverlayEnabled;
         Check(DaysPanel, app.Settings.StatDays);
-        Check(BadgePanel, app.Settings.HighBadge);
+        foreach (var (badge, name) in Core.Settings.Ranks)
+        {
+            var rb = new RadioButton
+            {
+                Content = name.ToUpperInvariant(), Tag = badge.ToString(CultureInfo.InvariantCulture),
+                Style = (Style)FindResource("Segment"), GroupName = "rank",
+            };
+            rb.Click += Rank_Click;
+            RankPanel.Children.Add(rb);
+        }
+        Check(RankPanel, app.Settings.HighBadge);
         app.DataChanged += Refresh;
         app.UpdateAvailable += ShowUpdate;
         ShowUpdate();
@@ -88,7 +98,8 @@ public partial class MainWindow : Window
     {
         var app = App.Current;
         var d = app.Data;
-        StatusText.Text = d == null ? app.Status : $"{app.Status} · за {d.StatDays} дн.";
+        StatusText.Text = d == null ? app.Status
+            : $"{app.Status}\n{d.RankMatches.ToString("N0", Thousands)} матчей за {d.StatDays} дн.";
         RefreshButton.IsEnabled = true;
         if (d == null)
         {
@@ -99,7 +110,7 @@ public partial class MainWindow : Window
         }
         EmptyText.Visibility = Visibility.Collapsed;
 
-        var stats = ScopeAll.IsChecked == true ? d.StatsAll : d.StatsHigh;
+        var stats = d.StatsRank;
         var good = (Brush)FindResource("Good");
         var bad = (Brush)FindResource("Bad");
         var rows = new List<HeroRow>();
@@ -148,11 +159,6 @@ public partial class MainWindow : Window
         SettingsView.Visibility = TabSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    void Scope_Checked(object sender, RoutedEventArgs e)
-    {
-        if (IsInitialized && HeroList != null) Refresh();
-    }
-
     void Sort_Click(object sender, RoutedEventArgs e)
     {
         string key = (string)((Button)sender).Tag;
@@ -181,10 +187,13 @@ public partial class MainWindow : Window
         await App.Current.Reload(false);
     }
 
-    async void Badge_Click(object sender, RoutedEventArgs e)
+    async void Rank_Click(object sender, RoutedEventArgs e)
     {
-        App.Current.Settings.HighBadge = int.Parse((string)((RadioButton)sender).Tag);
+        int badge = int.Parse((string)((RadioButton)sender).Tag);
+        if (badge == App.Current.Settings.HighBadge) return;
+        App.Current.Settings.HighBadge = badge;
         App.Current.Settings.Save();
+        StatusText.Text = "Загрузка…";
         await App.Current.Reload(false);
     }
 

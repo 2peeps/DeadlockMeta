@@ -63,7 +63,10 @@ public sealed class Settings
 
     public bool OverlayEnabled { get; set; } = true;
     public int StatDays { get; set; } = 14;
-    /// <summary>Lowest average match badge counted as "high rank" (tier * 10 + subtier); 81 is Oracle 1.</summary>
+    /// <summary>
+    /// Rank filter for the stats: lowest average match badge (tier * 10 + subtier, 81 is Oracle 1); 0 means all ranks.
+    /// Named HighBadge for settings files written by older versions.
+    /// </summary>
     public int HighBadge { get; set; } = 81;
 
     public int GridClientW { get; set; }
@@ -71,6 +74,11 @@ public sealed class Settings
     public double GridX0 { get; set; }
     public double GridY0 { get; set; }
     public double GridScale { get; set; }
+
+    public static readonly (int Badge, string Name)[] Ranks =
+        [(0, "Все ранги"), (71, "Emissary+"), (81, "Oracle+"), (91, "Phantom+"), (101, "Ascendant+"), (111, "Eternus")];
+
+    public static string RankName(int badge) => Ranks.FirstOrDefault(r => r.Badge == badge).Name ?? $"ранг {badge}+";
 
     public static Settings Load()
     {

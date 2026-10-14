@@ -39,7 +39,8 @@ foreach ($s in $shots) {
   $bmp.Save("$PSScriptRoot\e2e_$($s[0]).png"); $bmp.Dispose()
 }
 Cpu 'hero select open' 8000
-$script:showImage = $false; $form.Invalidate()
+# A real in-match frame: the watcher keeps searching for the grid on it, which is the cost during a match.
+$script:img.Dispose(); $script:img = [Drawing.Image]::FromFile((Resolve-Path "$PSScriptRoot\match_1080.png")); $form.Invalidate()
 Cpu 'game in foreground, other screen (like in a match)' 12000
 $exe.Refresh(); "memory: working set {0:N0} MB, private {1:N0} MB" -f ($exe.WorkingSet64 / 1MB), ($exe.PrivateMemorySize64 / 1MB)
 [U]::SetCursorPos($saved.X, $saved.Y) | Out-Null

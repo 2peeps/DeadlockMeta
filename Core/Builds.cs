@@ -70,17 +70,18 @@ public static class BuildService
 
     static readonly Dictionary<string, (DateTime At, HeroDetails Details)> cache = [];
 
-    public static async Task<HeroDetails> Load(int heroId, Settings s, bool highRanks)
+    public static async Task<HeroDetails> Load(int heroId, Settings s)
     {
-        string key = $"{heroId}:{s.StatDays}:{(highRanks ? s.HighBadge : 0)}";
+        int badge = s.HighBadge;
+        string key = $"{heroId}:{s.StatDays}:{badge}";
         lock (cache)
             if (cache.TryGetValue(key, out var hit) && DateTime.UtcNow - hit.At < TimeSpan.FromHours(3)) return hit.Details;
 
         long since = DateTimeOffset.UtcNow.AddDays(-s.StatDays).ToUnixTimeSeconds();
         since -= since % 3600;
-        string filter = $"min_unix_timestamp={since}" + (highRanks ? $"&min_average_badge={s.HighBadge}" : "");
+        string filter = $"min_unix_timestamp={since}" + (badge > 0 ? $"&min_average_badge={badge}" : "");
 
-        var builds = LoadBuilds(heroId, filter, highRanks);
+        var builds = LoadBuilds(heroId, filter, badge > 0);
         var phases = Phases.Select(p => LoadPhase(heroId, filter, p.Title, p.From, p.To)).ToList();
         var d = new HeroDetails(await builds, [.. await Task.WhenAll(phases)]);
         lock (cache) cache[key] = (DateTime.UtcNow, d);

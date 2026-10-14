@@ -65,14 +65,13 @@ public partial class MainWindow
     {
         var app = App.Current;
         if (app.Data is not { } d || !d.Heroes.TryGetValue(heroId, out var hero)) return;
-        bool high = ScopeAll.IsChecked != true;
-        var stats = high ? d.StatsHigh : d.StatsAll;
+        var stats = d.StatsRank;
 
         detailHero = heroId;
         int request = ++detailRequest;
         DetailName.Text = hero.Name.ToUpperInvariant();
         DetailCard.ImageSource = Card(hero);
-        string scope = high ? "высокие ранги" : "все ранги";
+        string scope = d.RankBadge > 0 ? Core.Settings.RankName(d.RankBadge) : "все ранги";
         DetailSub.Text = stats.TryGetValue(heroId, out var s)
             ? $"Винрейт {Pct(s.WinRate)} · в {s.PickRate.ToString("F0", CultureInfo.InvariantCulture)}% матчей · {scope}, {d.StatDays} дн."
             : $"{scope}, {d.StatDays} дн.";
@@ -85,7 +84,7 @@ public partial class MainWindow
         {
             catalogTask ??= ItemCatalog.Load();
             var cat = await catalogTask;
-            var details = await Task.Run(() => BuildService.Load(heroId, app.Settings, high));
+            var details = await Task.Run(() => BuildService.Load(heroId, app.Settings));
             await cat.FetchImages(details.Builds.SelectMany(b => b.Categories.SelectMany(c => c.ItemIds))
                 .Concat(details.Phases.SelectMany(p => p.Items.Select(i => i.ItemId))));
             if (request != detailRequest) return;
