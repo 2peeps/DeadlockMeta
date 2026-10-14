@@ -1,0 +1,228 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using DeadlockMeta.Core;
+using Drawing = System.Drawing;
+using WF = System.Windows.Forms;
+
+namespace DeadlockMeta;
+
+public partial class App : Application
+{
+    const string InstanceName = "DeadlockMetaApp";
+
+    Mutex? mutex;
+    EventWaitHandle? showSignal;
+    WF.NotifyIcon? tray;
+    OverlayWindow? overlay;
+    GameWatcher? watcher;
+    MainWindow? main;
+    bool loading;
+
+    public Settings Settings { get; private set; } = new();
+    public MetaData? Data { get; private set; }
+    public ImageSource? AppIcon { get; private set; }
+
+    /// <summary>Raised on the UI thread when stats were (re)loaded or loading failed.</summary>
+    public event Action? DataChanged;
+    public string Status { get; private set; } = "Загрузка статистики…";
+
+    public static new App Current => (App)Application.Current;
+
+    protected override async void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+        Settings = Settings.Load();
+        // Anything unexpected goes to the log, so a tester can send it instead of describing a silent crash.
+        DispatcherUnhandledException += (_, a) => Log.Write("crash (ui): " + a.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, a) => Log.Write("crash: " + a.ExceptionObject);
+
+        if (e.Args.Length >= 2 && e.Args[0] == "--test")
+        {
+            await TestImage(e.Args);
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Length >= 2 && e.Args[0] == "--shot")
+        {
+            await Screenshot(e.Args[1], e.Args.Contains("settings"));
+            Shutdown();
+            return;
+        }
+
+        mutex = new Mutex(true, InstanceName, out bool first);
+        showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceName + "Show");
+        if (!first)
+        {
+            // Already running: ask that copy to bring its window up.
+            showSignal.Set();
+            Shutdown();
+            return;
+        }
+        new Thread(() =>
+        {
+            while (showSignal.WaitOne()) Dispatcher.BeginInvoke(ShowMain);
+        }) { IsBackground = true }.Start();
+
+        Log.Write("started");
+        CreateTray();
+
+        overlay = new OverlayWindow();
+        new WindowInteropHelper(overlay).EnsureHandle();
+        watcher = new GameWatcher(Settings);
+        watcher.HoverChanged += h => Dispatcher.BeginInvoke(() => OnHover(h));
+        watcher.Start();
+
+        if (!e.Args.Contains("--tray")) ShowMain();
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromHours(1) };
+        timer.Tick += async (_, _) => await Reload(false);
+        timer.Start();
+        await Reload(false);
+    }
+
+    void CreateTray()
+    {
+        // The icon embedded in the exe (assets\icon.ico) is reused for the tray and the window.
+        var icon = Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? Drawing.SystemIcons.Application;
+        AppIcon = Imaging.CreateBitmapSourceFromHIcon(icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+
+        tray = new WF.NotifyIcon { Icon = icon, Text = "Deadlock Meta", Visible = true };
+        tray.DoubleClick += (_, _) => ShowMain();
+        var menu = new WF.ContextMenuStrip();
+        menu.Items.Add("Открыть", null, (_, _) => ShowMain());
+        menu.Items.Add("Обновить статистику", null, async (_, _) => await Reload(true));
+        menu.Items.Add("Выход", null, (_, _) => Quit());
+        tray.ContextMenuStrip = menu;
+    }
+
+    public void ShowMain()
+    {
+        main ??= new MainWindow();
+        main.Show();
+        if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
+        main.Activate();
+    }
+
+    public void Quit()
+    {
+        watcher?.Stop();
+        if (tray != null) { tray.Visible = false; tray.Dispose(); }
+        Shutdown();
+    }
+
+    /// <summary>Loads heroes and stats (from the cache when fresh, unless forced) and rebuilds the card matcher.</summary>
+    public async Task Reload(bool force)
+    {
+        if (loading) return;
+        loading = true;
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            var (data, matcher) = await Task.Run(async () =>
+            {
+                var d = await MetaData.Load(Settings, force);
+                return (d, d.BuildMatcher());
+            });
+            Data = data;
+            // Loading parses a couple of megabytes of JSON; hand that memory back right away.
+            System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
+            watcher?.SetMatcher(matcher);
+            Status = $"Статистика от {data.Updated:dd.MM HH:mm}";
+            Log.Write($"data loaded in {sw.ElapsedMilliseconds} ms: {data.Heroes.Count} heroes, {matcher.TemplateCount} cards, " +
+                $"{data.StatsAll.Count} with stats");
+        }
+        catch (Exception e)
+        {
+            Log.Write("load failed: " + e);
+            Status = Data == null ? "Нет связи с сервером статистики" : "Не удалось обновить, показаны прежние данные";
+        }
+        finally { loading = false; }
+        if (tray != null) tray.Text = "Deadlock Meta · " + (Status.Length > 45 ? Status[..45] : Status);
+        DataChanged?.Invoke();
+    }
+
+    void OnHover(HoverInfo? h)
+    {
+        if (overlay == null) return;
+        if (h is not { } hover || Data is not { } d || !Settings.OverlayEnabled)
+        {
+            overlay.HideHero();
+            return;
+        }
+        string name = d.Heroes.TryGetValue(hover.HeroId, out var hi) ? hi.Name : "?";
+        HeroStat? high = d.StatsHigh.TryGetValue(hover.HeroId, out var s1) ? s1 : null;
+        HeroStat? all = d.StatsAll.TryGetValue(hover.HeroId, out var s2) ? s2 : null;
+        overlay.ShowHero(name, high, all, hover.PanelX, hover.PanelY, hover.Scale);
+    }
+
+    // DeadlockMeta.exe --shot out.png [settings]: renders the main window off-screen into a PNG (for checking the UI).
+    async Task Screenshot(string path, bool settingsTab)
+    {
+        await Reload(false);
+        var w = new MainWindow
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual, Left = -5000, Top = 0,
+            ShowActivated = false, ShowInTaskbar = false,
+        };
+        w.Show();
+        if (settingsTab) w.ShowSettingsTab();
+        await Task.Delay(700);
+        var root = (FrameworkElement)w.Content;
+        var rtb = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(w.Background, null, new Rect(0, 0, root.ActualWidth, root.ActualHeight));
+            dc.DrawRectangle(new VisualBrush(root), null, new Rect(0, 0, root.ActualWidth, root.ActualHeight));
+        }
+        rtb.Render(dv);
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(rtb));
+        using var fs = File.Create(path);
+        enc.Save(fs);
+    }
+
+    // DeadlockMeta.exe --test screenshot.png [clientHeight]: writes what the matcher sees on a saved screenshot.
+    async Task TestImage(string[] args)
+    {
+        var sb = new StringBuilder();
+        try
+        {
+            var d = await MetaData.Load(Settings, false);
+            var m = d.BuildMatcher();
+            var f = ScreenGrabber.Load(args[1]);
+            int h = args.Length > 2 ? int.Parse(args[2]) : f.H;
+            var sw = Stopwatch.StartNew();
+            bool ok = m.FindGrid(f, f.W, h, out var g);
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"templates={m.TemplateCount} found={ok} in {sw.ElapsedMilliseconds} ms  x0={g.X0:F1} y0={g.Y0:F1}"));
+            if (ok)
+            {
+                var cells = new CellMatch[Matcher.Cols * Matcher.Rows];
+                int good = m.MatchGrid(f, g, Matcher.Rows, 1, cells, out _);
+                sb.AppendLine($"good cells={good}");
+                for (int r = 0; r < Matcher.Rows; r++)
+                {
+                    for (int c = 0; c < Matcher.Cols; c++)
+                    {
+                        var cm = cells[r * Matcher.Cols + c];
+                        string nm = cm.Score >= Matcher.MinScore && d.Heroes.TryGetValue(cm.HeroId, out var hi) ? hi.Name : "-";
+                        sb.Append(string.Create(CultureInfo.InvariantCulture, $"{nm,-14}{cm.Score:F2} | "));
+                    }
+                    sb.AppendLine();
+                }
+            }
+        }
+        catch (Exception e) { sb.AppendLine(e.ToString()); }
+        File.WriteAllText(Path.Combine(Settings.DataDir, "test_result.txt"), sb.ToString());
+    }
+}

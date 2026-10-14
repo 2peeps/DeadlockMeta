@@ -1,0 +1,9 @@
+bin/
+obj/
+app/
+release/
+.vs/
+*.user
+tests/e2e_*.png
+tests/ui_*.png
+tests/icon_preview.png
