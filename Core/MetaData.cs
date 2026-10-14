@@ -14,12 +14,12 @@ public record struct HeroStat(double WinRate, double PickRate, long Matches);
 /// <summary>Hero list, card images and winrates from the community API (deadlock-api.com), cached on disk.</summary>
 public sealed class MetaData
 {
-    const string Api = "https://api.deadlock-api.com/v1/";
+    internal const string Api = "https://api.deadlock-api.com/v1/";
     static readonly TimeSpan MaxAge = TimeSpan.FromHours(3);
     static readonly TimeSpan CardMaxAge = TimeSpan.FromDays(7);
     public static readonly string CardDir = Path.Combine(Settings.DataDir, "cards");
 
-    static readonly HttpClient http = CreateClient();
+    internal static readonly HttpClient Http = CreateClient();
 
     public Dictionary<int, HeroInfo> Heroes { get; } = [];
     public Dictionary<int, HeroStat> StatsAll { get; private set; } = [];
@@ -34,15 +34,15 @@ public sealed class MetaData
         return c;
     }
 
-    static async Task<string> Fetch(string url, string cacheName, bool force)
+    internal static async Task<string> Fetch(string url, string cacheName, bool force, TimeSpan? maxAge = null)
     {
         string path = Path.Combine(Settings.DataDir, cacheName);
         bool cached = File.Exists(path);
-        if (cached && !force && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < MaxAge)
+        if (cached && !force && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < (maxAge ?? MaxAge))
             return await File.ReadAllTextAsync(path);
         try
         {
-            string body = await http.GetStringAsync(url);
+            string body = await Http.GetStringAsync(url);
             await File.WriteAllTextAsync(path, body);
             return body;
         }
@@ -109,7 +109,7 @@ public sealed class MetaData
         {
             try
             {
-                byte[] bytes = await http.GetByteArrayAsync(h.CardUrl, ct);
+                byte[] bytes = await Http.GetByteArrayAsync(h.CardUrl, ct);
                 await File.WriteAllBytesAsync(h.CardPath, bytes, ct);
             }
             catch (Exception e) { Log.Write($"card {h.Name}: {e.Message}"); }

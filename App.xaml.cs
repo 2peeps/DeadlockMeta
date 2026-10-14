@@ -52,13 +52,29 @@ public partial class App : Application
 
         if (e.Args.Length >= 2 && e.Args[0] == "--shot")
         {
-            await Screenshot(e.Args[1], e.Args.Contains("settings"));
+            int hero = e.Args.Skip(2).Select(a => a.StartsWith("hero=") && int.TryParse(a[5..], out int h) ? h : 0).DefaultIfEmpty(0).Max();
+            await Screenshot(e.Args[1], e.Args.Contains("settings"), hero);
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Contains("--update-now"))
+        {
+            // Installs the latest release without the UI; used to check the update path end to end.
+            if (await Updater.Check() is { } u) await Updater.Install(u);
+            else Log.Write($"update-now: {Updater.Current} is up to date");
             Shutdown();
             return;
         }
 
         mutex = new Mutex(true, InstanceName, out bool first);
         showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceName + "Show");
+        if (!first && e.Args.Contains("--updated"))
+        {
+            // Started by the previous version during an update: wait for it to finish exiting.
+            try { first = mutex.WaitOne(TimeSpan.FromSeconds(20)); }
+            catch (AbandonedMutexException) { first = true; }
+        }
         if (!first)
         {
             // Already running: ask that copy to bring its window up.
@@ -71,7 +87,8 @@ public partial class App : Application
             while (showSignal.WaitOne()) Dispatcher.BeginInvoke(ShowMain);
         }) { IsBackground = true }.Start();
 
-        Log.Write("started");
+        Log.Write($"started {Updater.Current}");
+        Updater.CleanUp();
         CreateTray();
 
         overlay = new OverlayWindow();
@@ -83,9 +100,38 @@ public partial class App : Application
         if (!e.Args.Contains("--tray")) ShowMain();
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromHours(1) };
-        timer.Tick += async (_, _) => await Reload(false);
+        timer.Tick += async (_, _) => { await Reload(false); await CheckUpdate(); };
         timer.Start();
         await Reload(false);
+        await CheckUpdate();
+    }
+
+    /// <summary>A newer release on GitHub, when there is one.</summary>
+    public UpdateInfo? Update { get; private set; }
+
+    /// <summary>Raised on the UI thread when a newer version is found.</summary>
+    public event Action? UpdateAvailable;
+
+    async Task CheckUpdate()
+    {
+        try
+        {
+            var u = await Updater.Check();
+            if (u == null || u.Version == Update?.Version) return;
+            Update = u;
+            Log.Write($"update available: {u.Version}");
+            UpdateAvailable?.Invoke();
+            tray?.ShowBalloonTip(5000, "Deadlock Meta", $"Вышла версия {u.Version}. Открой программу, чтобы обновиться.", WF.ToolTipIcon.Info);
+        }
+        catch (Exception e) { Log.Write("update check: " + e.Message); }
+    }
+
+    /// <summary>Downloads and starts the new version, then closes this one.</summary>
+    public async Task InstallUpdate(IProgress<double> progress)
+    {
+        if (Update == null) return;
+        await Updater.Install(Update, progress);
+        Quit();
     }
 
     void CreateTray()
@@ -114,6 +160,8 @@ public partial class App : Application
     public void Quit()
     {
         watcher?.Stop();
+        // Released explicitly so a freshly installed update can take over straight away.
+        try { mutex?.ReleaseMutex(); } catch { }
         if (tray != null) { tray.Visible = false; tray.Dispose(); }
         Shutdown();
     }
@@ -164,8 +212,8 @@ public partial class App : Application
         overlay.ShowHero(name, high, all, hover.PanelX, hover.PanelY, hover.Scale);
     }
 
-    // DeadlockMeta.exe --shot out.png [settings]: renders the main window off-screen into a PNG (for checking the UI).
-    async Task Screenshot(string path, bool settingsTab)
+    // DeadlockMeta.exe --shot out.png [settings] [hero=ID]: renders the main window off-screen into a PNG (for checking the UI).
+    async Task Screenshot(string path, bool settingsTab, int heroId)
     {
         await Reload(false);
         var w = new MainWindow
@@ -175,6 +223,12 @@ public partial class App : Application
         };
         w.Show();
         if (settingsTab) w.ShowSettingsTab();
+        if (heroId > 0)
+        {
+            w.Height = 1500;
+            w.OpenHero(heroId);
+            for (int i = 0; i < 60 && !w.DetailsLoaded; i++) await Task.Delay(500);
+        }
         await Task.Delay(700);
         var root = (FrameworkElement)w.Content;
         var rtb = new RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);

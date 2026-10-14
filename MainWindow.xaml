@@ -29,6 +29,25 @@
                 <RadioButton x:Name="TabSettings" Content="НАСТРОЙКИ" Style="{StaticResource Tab}" GroupName="tabs" Checked="Tab_Checked"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button x:Name="UpdateButton" Visibility="Collapsed" Margin="0,16,12,0" Click="Update_Click"
+                        ToolTip="Скачать новую версию и перезапустить программу">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="b" Background="{StaticResource Accent}" CornerRadius="3" Padding="12,5,12,6" Cursor="Hand">
+                                <TextBlock x:Name="UpdateText" Text="{TemplateBinding Content}" FontFamily="{StaticResource Display}" FontStretch="Condensed"
+                                           FontWeight="Bold" FontSize="14" Foreground="{StaticResource Bg}"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="b" Property="Background" Value="{StaticResource Text}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="b" Property="Opacity" Value="0.7"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
                 <Button Content="—" Style="{StaticResource GhostButton}" FontFamily="{StaticResource Body}" FontSize="13" Padding="14,10,14,10" Click="Minimize_Click"/>
                 <Button Content="✕" Style="{StaticResource GhostButton}" FontFamily="{StaticResource Body}" FontSize="13" Padding="14,10,14,10" Click="Close_Click"/>
             </StackPanel>
@@ -75,7 +94,8 @@
                 <ItemsControl x:Name="HeroList" Margin="0,0,8,20">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border x:Name="row" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="0,7,0,7" Background="Transparent">
+                            <Border x:Name="row" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="0,7,0,7" Background="Transparent"
+                                    Cursor="Hand" MouseLeftButtonUp="HeroRow_Click" ToolTip="Лучшие сборки и предметы">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="40"/>
@@ -163,5 +183,50 @@
             </StackPanel>
             <TextBlock x:Name="VersionText" Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,30,0,0"/>
         </StackPanel>
+
+        <!-- Hero details: slides in from the right over the table when a hero is clicked -->
+        <Grid x:Name="DetailLayer" Grid.Row="2" Visibility="Collapsed">
+            <Border x:Name="DetailDim" Background="#000000" Opacity="0" MouseLeftButtonDown="DetailDim_Click"/>
+            <Border x:Name="DetailPanel" Width="620" HorizontalAlignment="Right" Background="{StaticResource Panel}"
+                    BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="DetailShift"/>
+                </Border.RenderTransform>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Margin="24,18,12,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Width="42" Height="70" CornerRadius="2" BorderBrush="{StaticResource Line}" BorderThickness="1">
+                            <Border.Background>
+                                <ImageBrush x:Name="DetailCard" Stretch="UniformToFill"/>
+                            </Border.Background>
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="DetailName" FontFamily="{StaticResource Display}" FontStretch="Condensed" FontWeight="Bold"
+                                       FontSize="30" Foreground="{StaticResource Text}"/>
+                            <TextBlock x:Name="DetailSub" Foreground="{StaticResource Muted}" FontSize="13"/>
+                        </StackPanel>
+                        <Button Grid.Column="2" Content="✕" Style="{StaticResource GhostButton}" FontFamily="{StaticResource Body}"
+                                FontSize="14" Padding="12,8,12,8" VerticalAlignment="Top" Click="DetailClose_Click"/>
+                    </Grid>
+                    <ScrollViewer x:Name="DetailScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <StackPanel x:Name="DetailBody" Margin="24,0,24,24"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Short confirmation, e.g. after copying a build ID -->
+        <Border x:Name="Toast" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24"
+                Background="{StaticResource Text}" CornerRadius="3" Padding="16,8,16,9" Opacity="0" IsHitTestVisible="False">
+            <TextBlock x:Name="ToastText" Foreground="{StaticResource Bg}" FontSize="13.5" FontWeight="SemiBold"/>
+        </Border>
     </Grid>
 </Window>

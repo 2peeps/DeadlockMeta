@@ -13,6 +13,7 @@ namespace DeadlockMeta;
 /// <summary>One line of the hero table.</summary>
 public sealed class HeroRow
 {
+    public int Id { get; init; }
     public int Place { get; set; }
     public string Name { get; init; } = "";
     public ImageSource? Card { get; init; }
@@ -47,6 +48,8 @@ public partial class MainWindow : Window
         Check(DaysPanel, app.Settings.StatDays);
         Check(BadgePanel, app.Settings.HighBadge);
         app.DataChanged += Refresh;
+        app.UpdateAvailable += ShowUpdate;
+        ShowUpdate();
         StateChanged += (_, _) => Root.Margin = new Thickness(WindowState == WindowState.Maximized ? 7 : 0);
         Refresh();
     }
@@ -106,6 +109,7 @@ public partial class MainWindow : Window
             double off = Math.Clamp((s.WinRate - 50) / BarRange, -1, 1) * BarHalfWidth;
             rows.Add(new HeroRow
             {
+                Id = id,
                 Name = h.Name.ToUpperInvariant(),
                 Card = Card(h),
                 WinRate = s.WinRate, PickRate = s.PickRate, Matches = s.Matches,
