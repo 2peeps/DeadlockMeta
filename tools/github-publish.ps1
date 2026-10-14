@@ -31,4 +31,4 @@ $zip = "release\DeadlockMeta-$version.zip"
 if (-not (Test-Path $zip)) { throw "$zip not found: run publish.ps1 first" }
 & $gh release create "v$version" $zip --title "Deadlock Meta $version" --notes-file "docs\release-notes\$version.md"
 if ($LASTEXITCODE -ne 0) { throw 'release failed' }
-& $gh repo view --web
+"Release: https://github.com/2peeps/DeadlockMeta/releases/tag/v$version"
