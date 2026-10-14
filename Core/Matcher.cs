@@ -35,7 +35,9 @@ public sealed class Matcher
     const double InL = 0.10, InR = 0.90, InT = 0.17, InB = 0.86;
     // Empty cells score up to ~0.6 against some card, real cards 0.85 and up.
     public const float MinScore = 0.72f;
-    public const int MinCards = 8;
+    // Cards that must be recognised in the first two rows (18 cells) to accept the grid. The hovered card covers
+    // at most a few of them; other screens with hero art used to pass a lower bar and then drop out a second later.
+    public const int MinCards = 12;
 
     readonly List<int> ids = [];
     readonly List<float[]> sigs = [];
