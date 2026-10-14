@@ -52,7 +52,7 @@ public sealed class ItemCatalog
 
 public sealed record BuildCategory(string Name, bool Optional, List<int> ItemIds);
 
-public sealed record BuildInfo(int Id, string Name, string Author, double WinRate, long Matches, List<BuildCategory> Categories);
+public sealed record BuildInfo(int Id, int Version, string Name, string Author, double WinRate, long Matches, List<BuildCategory> Categories);
 
 public sealed record PhaseItem(int ItemId, double WinRate, long Matches);
 
@@ -114,14 +114,22 @@ public static class BuildService
             .Take(BuildCount).ToList();
         if (top.Count == 0) return [];
 
-        var details = await Task.WhenAll(top.Select(b => Get($"{MetaData.Api}builds?build_id={b.Id}&only_latest=true")));
+        // Build IDs are only unique per hero (the game also searches them inside one hero's builds):
+        // 262104 is both a Haze and a Dynamo build. So the lookup is narrowed to this hero.
+        var details = await Task.WhenAll(top.Select(b =>
+            Get($"{MetaData.Api}builds?build_id={b.Id}&hero_id={heroId}&only_latest=true")));
         var authors = new Dictionary<long, string>();
-        var builds = new List<(int Id, long Author, string Name, List<BuildCategory> Cats, long Wins, long Matches)>();
+        var builds = new List<(int Id, int Version, long Author, string Name, List<BuildCategory> Cats, long Wins, long Matches)>();
         for (int i = 0; i < top.Count; i++)
         {
             using var doc = JsonDocument.Parse(details[i]);
-            if (doc.RootElement.GetArrayLength() == 0) continue;
-            var hb = doc.RootElement[0].GetProperty("hero_build");
+            var match = doc.RootElement.EnumerateArray()
+                .Select(e => e.GetProperty("hero_build"))
+                .Where(h => h.GetProperty("hero_id").GetInt32() == heroId && h.GetProperty("hero_build_id").GetInt64() == top[i].Id)
+                .OrderByDescending(h => h.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0)
+                .ToList();
+            if (match.Count == 0) continue;
+            var hb = match[0];
             var cats = new List<BuildCategory>();
             if (hb.TryGetProperty("details", out var det) && det.TryGetProperty("mod_categories", out var mc))
                 foreach (var c in mc.EnumerateArray())
@@ -132,7 +140,8 @@ public static class BuildService
                     bool optional = c.TryGetProperty("optional", out var o) && o.ValueKind == JsonValueKind.True;
                     cats.Add(new BuildCategory(c.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "", optional, ids));
                 }
-            builds.Add((top[i].Id, hb.GetProperty("author_account_id").GetInt64(), hb.GetProperty("name").GetString() ?? "",
+            int version = hb.TryGetProperty("version", out var ver) && ver.ValueKind == JsonValueKind.Number ? ver.GetInt32() : 0;
+            builds.Add((top[i].Id, version, hb.GetProperty("author_account_id").GetInt64(), hb.GetProperty("name").GetString() ?? "",
                 cats, top[i].Wins, top[i].Matches));
         }
 
@@ -145,7 +154,7 @@ public static class BuildService
         }
         catch (Exception e) { Log.Write("build authors: " + e.Message); }
 
-        return builds.Select(b => new BuildInfo(b.Id, b.Name.Trim(), authors.GetValueOrDefault(b.Author, ""),
+        return builds.Select(b => new BuildInfo(b.Id, b.Version, b.Name.Trim(), authors.GetValueOrDefault(b.Author, ""),
             100.0 * b.Wins / b.Matches, b.Matches, b.Cats)).ToList();
     }
 

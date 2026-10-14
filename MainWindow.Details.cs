@@ -237,7 +237,7 @@ public partial class MainWindow
             FontFamily = (FontFamily)FindResource("Display"), FontStretch = FontStretches.Condensed, FontWeight = FontWeights.Bold,
             FontSize = 22, Foreground = Res("Text"),
         });
-        titles.Children.Add(Note((b.Author.Length > 0 ? $"автор: {b.Author} · " : "") + $"ID {b.Id}", 12.5, 2));
+        titles.Children.Add(Note((b.Author.Length > 0 ? $"автор: {b.Author} · " : "") + $"ID {b.Id}" + (b.Version > 0 ? $" · версия {b.Version}" : ""), 12.5, 2));
         top.Children.Add(titles);
 
         var score = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(16, 0, 0, 0) };
