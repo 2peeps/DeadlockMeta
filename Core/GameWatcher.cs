@@ -19,6 +19,9 @@ sealed class GameWatcher(Settings settings)
     static readonly TimeSpan FullSearchEvery = TimeSpan.FromSeconds(3);
     static readonly TimeSpan ScanIdle = TimeSpan.FromMilliseconds(500), ScanWhileShown = TimeSpan.FromMilliseconds(200);
 
+    // DEADLOCKMETA_DEBUG=1 logs every hover change (cursor position and hero).
+    static readonly bool Debug = Environment.GetEnvironmentVariable("DEADLOCKMETA_DEBUG") == "1";
+
     volatile Matcher? matcher;
     volatile bool stop;
     Thread? thread;
@@ -143,6 +146,11 @@ sealed class GameWatcher(Settings settings)
 
             if (hover != shown)
             {
+                if (Debug)
+                {
+                    Native.GetCursorPos(out var dc);
+                    Log.Write($"hover: cursor {dc.X},{dc.Y} -> hero {(hover?.HeroId ?? 0)}");
+                }
                 shown = hover;
                 HoverChanged?.Invoke(hover);
             }

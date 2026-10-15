@@ -32,10 +32,11 @@ $saved = [Windows.Forms.Cursor]::Position
 $env:DEADLOCKMETA_PROCESS = 'powershell'
 $exe = Start-Process $AppPath -ArgumentList '--tray' -PassThru
 Pump 15000
-$shots = $Shots -split "," | % { $p = $_ -split ":"; , @($p[0], [int]$p[1], [int]$p[2]) }
-foreach ($s in $shots) {
+$points = $Shots -split "," | % { $p = $_ -split ":"; , @($p[0], [int]$p[1], [int]$p[2]) }
+foreach ($s in $points) {
   [U]::SetCursorPos($ox + $s[1], $oy + $s[2]) | Out-Null
-  Pump 600
+  # Long enough for the panel to be drawn before the screen is grabbed.
+  Pump 1200
   $bmp = New-Object Drawing.Bitmap 1300, 520
   $g = [Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($ox, $oy, 0, 0, $bmp.Size); $g.Dispose()
   $bmp.Save("$PSScriptRoot\e2e_$($s[0]).png"); $bmp.Dispose()
