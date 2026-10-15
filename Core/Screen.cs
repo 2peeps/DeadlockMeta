@@ -46,12 +46,18 @@ sealed class ScreenGrabber : IDisposable
         if (pid != cachedPid)
         {
             cachedPid = pid;
+            bool wasGame = cachedIsGame;
+            string name = "?";
             try
             {
                 using var p = Process.GetProcessById((int)pid);
-                cachedIsGame = Array.IndexOf(GameProcesses, p.ProcessName.ToLowerInvariant()) >= 0;
+                name = p.ProcessName;
+                cachedIsGame = Array.IndexOf(GameProcesses, name.ToLowerInvariant()) >= 0;
             }
             catch { cachedIsGame = false; }
+            // Which program takes the keyboard from the game (or gives it back) is what to look at when a key such
+            // as Esc seems not to reach the game.
+            if (wasGame != cachedIsGame) Log.Write(cachedIsGame ? $"game is in front ({name})" : $"game lost focus to {name}");
         }
         if (!cachedIsGame) return false;
         var o = new Native.POINT();

@@ -3,8 +3,11 @@ using System.Drawing;
 
 namespace DeadlockMeta.Core;
 
-/// <summary>Where to draw the panel for the hovered hero, in screen pixels; Scale is game window height / 1080.</summary>
-public record struct HoverInfo(int HeroId, int PanelX, int PanelY, double Scale);
+/// <summary>
+/// Where to draw the panel for the hovered hero, in screen pixels; Scale is the game UI scale (1 at 1080p).
+/// Compact asks for the narrow panel used where the free space is small.
+/// </summary>
+public record struct HoverInfo(int HeroId, int PanelX, int PanelY, double Scale, bool Compact);
 
 /// <summary>
 /// Background loop: while Deadlock is the foreground window it looks for the hero select grid and reports
@@ -12,9 +15,13 @@ public record struct HoverInfo(int HeroId, int PanelX, int PanelY, double Scale)
 /// </summary>
 sealed class GameWatcher(Settings settings)
 {
-    // The panel sits just right of the grid, level with its top row. Above the grid it covered the title of the
-    // "build your roster" screen, which is longer than "hero select".
-    const double PanelGap = 16;
+    // The panel goes in the free space above the grid; offsets are from the grid's top-left corner at 1080p.
+    // Hero select: right of the "ВЫБОР ГЕРОЯ" title. Build your roster: its title is longer and a round party
+    // icon sits to its right, so a narrower panel goes between the two. Right of the grid it covered hero art.
+    const double SelectPanelDx = 356, SelectPanelDy = -118;
+    const double RosterPanelDx = 444, RosterPanelDy = -138;
+    // The roster screen's grid starts lower (178 vs 154 at 1080p); this splits the two.
+    const double RosterGridY = 166;
     const int IdleMs = 1000, LockedMs = 50;
     static readonly TimeSpan FullSearchEvery = TimeSpan.FromSeconds(3);
     static readonly TimeSpan ScanIdle = TimeSpan.FromMilliseconds(500), ScanWhileShown = TimeSpan.FromMilliseconds(200);
@@ -128,11 +135,10 @@ sealed class GameWatcher(Settings settings)
                         if (locked && over && known[hr * Matcher.Cols + hc] != 0)
                         {
                             double k = geom.Scale;
-                            double px = geom.X0 + (Matcher.Cols - 1) * geom.PitchX + geom.CardW + PanelGap * k;
-                            // The game opens a small menu to the right of a hovered card; for the top row of the
-                            // right-hand columns it would land on the panel, so the panel steps down out of its way.
-                            double py = geom.Y0 + (hc >= Matcher.Cols - 2 && hr == 0 ? 2 * geom.PitchY : 0);
-                            hover = new HoverInfo(known[hr * Matcher.Cols + hc], client.X + (int)px, client.Y + (int)py, k);
+                            bool roster = geom.Y0 / k > RosterGridY;
+                            double px = geom.X0 + (roster ? RosterPanelDx : SelectPanelDx) * k;
+                            double py = geom.Y0 + (roster ? RosterPanelDy : SelectPanelDy) * k;
+                            hover = new HoverInfo(known[hr * Matcher.Cols + hc], client.X + (int)px, client.Y + (int)py, k, roster);
                         }
                     }
                 }

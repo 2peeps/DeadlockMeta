@@ -32,7 +32,7 @@ $saved = [Windows.Forms.Cursor]::Position
 $env:DEADLOCKMETA_PROCESS = 'powershell'
 $exe = Start-Process $AppPath -ArgumentList '--tray' -PassThru
 Pump 15000
-$points = $Shots -split "," | % { $p = $_ -split ":"; , @($p[0], [int]$p[1], [int]$p[2]) }
+$points = @($Shots -split "," | % { $p = $_ -split ":"; , @($p[0], [int]$p[1], [int]$p[2]) })
 foreach ($s in $points) {
   [U]::SetCursorPos($ox + $s[1], $oy + $s[2]) | Out-Null
   # Long enough for the panel to be drawn before the screen is grabbed.
