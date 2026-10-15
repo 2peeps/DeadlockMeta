@@ -5,9 +5,8 @@ namespace DeadlockMeta.Core;
 
 /// <summary>
 /// Where to draw the panel for the hovered hero, in screen pixels; Scale is the game UI scale (1 at 1080p).
-/// Compact asks for the narrow panel used where the free space is small.
 /// </summary>
-public record struct HoverInfo(int HeroId, int PanelX, int PanelY, double Scale, bool Compact);
+public record struct HoverInfo(int HeroId, int PanelX, int PanelY, double Scale);
 
 /// <summary>
 /// Background loop: while Deadlock is the foreground window it looks for the hero select grid and reports
@@ -15,11 +14,12 @@ public record struct HoverInfo(int HeroId, int PanelX, int PanelY, double Scale,
 /// </summary>
 sealed class GameWatcher(Settings settings)
 {
-    // The panel goes in the free space above the grid; offsets are from the grid's top-left corner at 1080p.
-    // Hero select: right of the "ВЫБОР ГЕРОЯ" title. Build your roster: its title is longer and a round party
-    // icon sits to its right, so a narrower panel goes between the two. Right of the grid it covered hero art.
-    const double SelectPanelDx = 356, SelectPanelDy = -118;
-    const double RosterPanelDx = 444, RosterPanelDy = -138;
+    // The panel sits on the line of the screen title, just right of it, so it reads as part of the header; offsets
+    // are from the grid's top-left corner at 1080p. Hero select: after "ВЫБОР ГЕРОЯ". Build your roster: after
+    // the longer "СОЗДАТЬ СОСТАВ", before the round party icon. (Right of the grid it covered hero art; above the
+    // title it looked detached.)
+    const double SelectPanelDx = 350, SelectPanelDy = -95;
+    const double RosterPanelDx = 426, RosterPanelDy = -96;
     // The roster screen's grid starts lower (178 vs 154 at 1080p); this splits the two.
     const double RosterGridY = 166;
     const int IdleMs = 1000, LockedMs = 50;
@@ -138,7 +138,7 @@ sealed class GameWatcher(Settings settings)
                             bool roster = geom.Y0 / k > RosterGridY;
                             double px = geom.X0 + (roster ? RosterPanelDx : SelectPanelDx) * k;
                             double py = geom.Y0 + (roster ? RosterPanelDy : SelectPanelDy) * k;
-                            hover = new HoverInfo(known[hr * Matcher.Cols + hc], client.X + (int)px, client.Y + (int)py, k, roster);
+                            hover = new HoverInfo(known[hr * Matcher.Cols + hc], client.X + (int)px, client.Y + (int)py, k);
                         }
                     }
                 }

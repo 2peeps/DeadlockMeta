@@ -26,6 +26,10 @@ public sealed class MetaData
     /// <summary>Stats for the selected rank filter; the same as StatsAll when that filter is "all ranks".</summary>
     public Dictionary<int, HeroStat> StatsRank { get; private set; } = [];
     public int RankBadge { get; private set; }
+    /// <summary>Higher-rank stats for the in-game panel (the selected rank, or Oracle+ when that is "all ranks").</summary>
+    public Dictionary<int, HeroStat> StatsHigh { get; private set; } = [];
+    public int HighBadge { get; private set; }
+    const int DefaultHighBadge = 81;
     /// <summary>Matches behind StatsRank: shows how thin the data gets at the top ranks.</summary>
     public long RankMatches { get; private set; }
     public DateTime Updated { get; private set; }
@@ -113,10 +117,14 @@ public sealed class MetaData
         string q = $"{Api}analytics/hero-stats?min_unix_timestamp={since}";
         string allFile = $"stats_all_{s.StatDays}.json";
         var all = Fetch(q, allFile, force);
-        var ranked = s.HighBadge > 0
-            ? Fetch($"{q}&min_average_badge={s.HighBadge}", $"stats_high_{s.StatDays}_{s.HighBadge}.json", force) : null;
+        // The in-game panel always shows a higher-rank winrate next to "all ranks": the selected rank, or Oracle+
+        // when the table is set to all ranks.
+        int overlayBadge = s.HighBadge > 0 ? s.HighBadge : DefaultHighBadge;
+        var high = Fetch($"{q}&min_average_badge={overlayBadge}", $"stats_high_{s.StatDays}_{overlayBadge}.json", force);
         d.StatsAll = ParseStats(await all);
-        d.StatsRank = ranked != null ? ParseStats(await ranked) : d.StatsAll;
+        d.StatsHigh = ParseStats(await high);
+        d.HighBadge = overlayBadge;
+        d.StatsRank = s.HighBadge > 0 ? d.StatsHigh : d.StatsAll;
         d.RankBadge = s.HighBadge;
         // Each match is counted once per player.
         d.RankMatches = d.StatsRank.Values.Sum(x => x.Matches) / 12;

@@ -230,10 +230,9 @@ public partial class App : Application
             return;
         }
         string name = d.Heroes.TryGetValue(hover.HeroId, out var hi) ? hi.Name : "?";
-        HeroStat? ranked = d.StatsRank.TryGetValue(hover.HeroId, out var s1) ? s1 : null;
+        HeroStat? high = d.StatsHigh.TryGetValue(hover.HeroId, out var s1) ? s1 : null;
         HeroStat? all = d.StatsAll.TryGetValue(hover.HeroId, out var s2) ? s2 : null;
-        string? rank = d.RankBadge > 0 ? Core.Settings.RankName(d.RankBadge) : null;
-        overlay.ShowHero(name, rank, ranked, all, hover.PanelX, hover.PanelY, hover.Scale, hover.Compact);
+        overlay.ShowHero(name, Core.Settings.RankName(d.HighBadge), high, all, hover.PanelX, hover.PanelY, hover.Scale);
     }
 
     // DeadlockMeta.exe --shot out.png [settings] [hero=ID]: renders the main window off-screen into a PNG (for checking the UI).

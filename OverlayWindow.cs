@@ -7,11 +7,15 @@ using DeadlockMeta.Core;
 
 namespace DeadlockMeta;
 
-/// <summary>Click-through panel drawn on top of the game with the hovered hero's winrates.</summary>
+/// <summary>
+/// Click-through panel drawn on top of the game with the hovered hero's winrates. Laid out like a part of the
+/// screen header: hero name over one line of winrates, with a coloured bar on the left.
+/// </summary>
 sealed class OverlayWindow : Window
 {
     readonly TextBlock name = new();
-    readonly TextBlock[] label = new TextBlock[2], win = new TextBlock[2], pick = new TextBlock[2];
+    readonly TextBlock[] label = new TextBlock[2], win = new TextBlock[2];
+    readonly Border accent = new();
     readonly ScaleTransform scale = new(1, 1);
     readonly Brush good, bad, muted, text;
     IntPtr hwnd;
@@ -35,44 +39,43 @@ sealed class OverlayWindow : Window
         Left = -10000; Top = -10000;
 
         name.FontFamily = display; name.FontStretch = FontStretches.Condensed; name.FontWeight = FontWeights.Bold;
-        name.FontSize = 22; name.Foreground = text;
-        name.Margin = new Thickness(0, 0, 0, 2);
+        name.FontSize = 18; name.Foreground = text;
 
-        var grid = new Grid();
-        for (int c = 0; c < 3; c++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        // One line: "Все 46.2%   Oracle+ 47.1%".
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 0) };
         for (int r = 0; r < 2; r++)
         {
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            label[r] = Cell(grid, r, 0, 14, FontWeights.Normal, muted);
-            win[r] = Cell(grid, r, 1, 15, FontWeights.Bold, text);
-            pick[r] = Cell(grid, r, 2, 13, FontWeights.Normal, muted);
-            label[r].Margin = new Thickness(0, 0, 14, 0);
-            win[r].Margin = new Thickness(0, 0, 14, 0);
-            win[r].MinWidth = 50;
+            label[r] = new TextBlock { FontSize = 12.5, Foreground = muted, VerticalAlignment = VerticalAlignment.Center };
+            win[r] = new TextBlock
+            {
+                FontSize = 14, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(5, 0, r == 0 ? 12 : 0, 0),
+            };
+            line.Children.Add(label[r]);
+            line.Children.Add(win[r]);
         }
 
-        var stack = new StackPanel();
+        var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         stack.Children.Add(name);
-        stack.Children.Add(grid);
+        stack.Children.Add(line);
+
+        accent.Width = 3;
+        accent.CornerRadius = new CornerRadius(1.5);
+        accent.Margin = new Thickness(0, 1, 10, 1);
+
+        var row = new DockPanel();
+        DockPanel.SetDock(accent, Dock.Left);
+        row.Children.Add(accent);
+        row.Children.Add(stack);
 
         Content = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xEB, 0x0F, 0x14, 0x13)),
-            BorderBrush = (Brush)res["Line"],
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(13, 6, 13, 8),
-            Child = stack,
+            Background = new SolidColorBrush(Color.FromArgb(0xD9, 0x0F, 0x14, 0x13)),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(8, 5, 11, 6),
+            Child = row,
             LayoutTransform = scale,
         };
-    }
-
-    static TextBlock Cell(Grid g, int row, int col, double size, FontWeight weight, Brush brush)
-    {
-        var t = new TextBlock { FontSize = size, FontWeight = weight, Foreground = brush, VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetRow(t, row); Grid.SetColumn(t, col);
-        g.Children.Add(t);
-        return t;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -84,34 +87,24 @@ sealed class OverlayWindow : Window
             | Native.WS_EX_LAYERED | Native.WS_EX_NOACTIVATE);
     }
 
-    void Row(int r, string? caption, HeroStat? s, bool compact)
+    Brush Colour(HeroStat? s) => s is not { } st ? muted : st.WinRate >= 50 ? good : bad;
+
+    void Value(int r, string caption, HeroStat? s)
     {
-        var shown = caption == null ? Visibility.Collapsed : Visibility.Visible;
-        label[r].Visibility = win[r].Visibility = shown;
-        pick[r].Visibility = compact ? Visibility.Collapsed : shown;
-        win[r].Margin = new Thickness(0, 0, compact ? 0 : 14, 0);
-        label[r].Text = caption ?? "";
-        if (s is { } st)
-        {
-            win[r].Text = st.WinRate.ToString("F1", CultureInfo.InvariantCulture) + "%";
-            win[r].Foreground = st.WinRate >= 50 ? good : bad;
-            pick[r].Text = "в " + st.PickRate.ToString("F0", CultureInfo.InvariantCulture) + "% матчей";
-        }
-        else
-        {
-            win[r].Text = "—"; win[r].Foreground = muted; pick[r].Text = "нет данных";
-        }
+        label[r].Text = caption;
+        win[r].Text = s is { } st ? st.WinRate.ToString("F1", CultureInfo.InvariantCulture) + "%" : "—";
+        win[r].Foreground = Colour(s);
     }
 
     /// <summary>screenX/screenY are physical pixels; k is the UI scale of the game (1 at 1080p).</summary>
-    /// <param name="rankName">The selected rank filter, or null when it is "all ranks" (then only that row is shown).</param>
-    /// <param name="compact">Leave out the "in N% of matches" column, for screens with little free space.</param>
-    public void ShowHero(string heroName, string? rankName, HeroStat? ranked, HeroStat? all, int screenX, int screenY, double k,
-        bool compact)
+    /// <param name="rankName">Name of the rank filter shown next to "all ranks" (e.g. Oracle+).</param>
+    public void ShowHero(string heroName, string rankName, HeroStat? ranked, HeroStat? all, int screenX, int screenY, double k)
     {
         name.Text = heroName.ToUpperInvariant();
-        Row(0, rankName, ranked, compact);
-        Row(1, "Все ранги", all, compact);
+        Value(0, "Все", all);
+        Value(1, rankName, ranked);
+        // The bar follows the higher-rank winrate: that is the number that says whether the hero is strong.
+        accent.Background = Colour(ranked ?? all);
         // WPF already applies the Windows display scale, so it is divided out to keep the panel tied to the game UI.
         scale.ScaleX = scale.ScaleY = Math.Max(0.6, k) / VisualTreeHelper.GetDpi(this).DpiScaleX;
         if (Visibility != Visibility.Visible) Show();
