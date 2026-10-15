@@ -78,7 +78,7 @@ sealed class GameWatcher(Settings settings)
                         {
                             double hk = spot.Scale > 0 ? spot.Scale : client.Height / 1080.0;
                             var hint = GridGeom.Make(hk, 0, 0, 0) with { X0 = spot.X0, Y0 = spot.Y0 };
-                            if (CaptureGrid(grabber, client, hint, 2, frame) && m.Confirm(frame, hint))
+                            if (CaptureGrid(grabber, client, hint, Matcher.AcceptRows, frame) && m.Confirm(frame, hint))
                             {
                                 geom = hint; locked = true; how = "remembered position";
                                 break;
@@ -117,7 +117,7 @@ sealed class GameWatcher(Settings settings)
                             int good = 0;
                             if (CaptureGrid(grabber, client, geom, Matcher.Rows, frame))
                             {
-                                m.MatchGrid(frame, geom, Matcher.Rows, 1, cells, out _);
+                                m.MatchGrid(frame, geom, Matcher.Rows, 1, cells, out _, nudge: true);
                                 for (int i = 0; i < cells.Length; i++)
                                 {
                                     if (cells[i].Score < Matcher.MinScore) continue;

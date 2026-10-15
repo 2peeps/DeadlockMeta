@@ -322,10 +322,11 @@ public partial class App : Application
             bool ok = m.FindGrid(f, f.W, h, out var g);
             sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
                 $"templates={m.TemplateCount} found={ok} in {sw.ElapsedMilliseconds} ms  x0={g.X0:F1} y0={g.Y0:F1}"));
-            if (ok)
+            // Cells are printed even when the grid was not accepted, to see why.
+            if (g.PitchX > 0)
             {
                 var cells = new CellMatch[Matcher.Cols * Matcher.Rows];
-                int good = m.MatchGrid(f, g, Matcher.Rows, 1, cells, out _);
+                int good = m.MatchGrid(f, g, Matcher.Rows, 1, cells, out _, nudge: true);
                 sb.AppendLine($"good cells={good}");
                 for (int r = 0; r < Matcher.Rows; r++)
                 {

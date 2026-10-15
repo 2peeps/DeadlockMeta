@@ -40,13 +40,19 @@ public sealed class Matcher
     const double InL = 0.10, InR = 0.90, InT = 0.17, InB = 0.86;
     // Empty cells score up to ~0.6 against some card, real cards 0.85 and up.
     public const float MinScore = 0.72f;
-    // Cards that must be recognised in the first two rows (18 cells) to accept the grid. The hovered card covers
-    // at most a few of them; other screens with hero art used to pass a lower bar and then drop out a second later.
-    public const int MinCards = 12;
+    // Cards that must be recognised in the first AcceptRows rows (27 cells) to accept the grid. The hovered card,
+    // the game's card menu and tilted priority cards cover a few of them; other screens with hero art used to pass
+    // a lower bar and then drop out a second later.
+    public const int MinCards = 12, AcceptRows = 3;
     // Below this average channel spread a card counts as greyed out.
     const float GreyChroma = 14;
     // A greyed-out card must beat the runner-up by this much.
     const float GreyMargin = 0.06f;
+    // Cells scoring at least this (but under MinScore) get the nudged retries.
+    const float NudgeFrom = 0.5f;
+    // Greyed-out cards measure 0-8; some coloured portraits are nearly grey too (Graves about 11), so the cut for
+    // "in the roster" is lower than GreyChroma.
+    const float NudgeMinChroma = 9;
 
     readonly List<int> ids = [];
     // Each card is kept twice: in colour, and as brightness only. The "build your roster" screen shows heroes that
@@ -139,10 +145,41 @@ public sealed class Matcher
         return true;
     }
 
-    CellMatch MatchCell(Frame f, GridGeom g, int col, int row, int step)
+    // Cards the player gave high priority on the roster screen are drawn tilted and a little bigger, slightly off
+    // their cell. A cell that nearly matches is tried again larger and nudged around before giving up.
+    static readonly (double Scale, double Dx, double Dy)[] Nudges = BuildNudges();
+
+    static (double, double, double)[] BuildNudges()
+    {
+        var list = new List<(double, double, double)>();
+        foreach (double s in new[] { 1.0, 1.07, 1.14 })
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    if (s != 1.0 || dx != 0 || dy != 0) list.Add((s, dx * 0.06, dy * 0.05));
+        return [.. list];
+    }
+
+    CellMatch MatchCell(Frame f, GridGeom g, int col, int row, int step, bool nudge)
+    {
+        double x = g.X0 + col * g.PitchX, y = g.Y0 + row * g.PitchY;
+        var m = MatchAt(f, x, y, g.CardW, g.CardH, step);
+        // Priority cards are in the roster, so they are always in colour; nudging greyed-out cards only found wrong
+        // heroes (a grey Celeste came out as Viscous).
+        if (!nudge || m.Score >= MinScore || m.Score < NudgeFrom || m.Chroma < NudgeMinChroma) return m;
+        foreach (var (s, dx, dy) in Nudges)
+        {
+            double w = g.CardW * s, h = g.CardH * s;
+            // Scaled around the cell centre, then shifted by a fraction of the card size.
+            var n = MatchAt(f, x - (w - g.CardW) / 2 + dx * g.CardW, y - (h - g.CardH) / 2 + dy * g.CardH, w, h, step);
+            if (n.Score > m.Score) m = n;
+        }
+        return m;
+    }
+
+    CellMatch MatchAt(Frame f, double x, double y, double w, double h, int step)
     {
         var m = new CellMatch(0, 0);
-        if (!Signature(f, g.X0 + col * g.PitchX, g.Y0 + row * g.PitchY, g.CardW, g.CardH, step, tmp, tmpGray, out float chroma)) return m;
+        if (!Signature(f, x, y, w, h, step, tmp, tmpGray, out float chroma)) return m;
         // A greyed-out card is compared by brightness only, a coloured one by colour only: mixing the two lets a
         // colour card win on brightness alone.
         bool grey = chroma < GreyChroma;
@@ -174,21 +211,23 @@ public sealed class Matcher
     }
 
     /// <summary>Matches every cell of the grid; returns how many look like a hero card.</summary>
-    public int MatchGrid(Frame f, GridGeom g, int rows, int step, CellMatch[]? cells, out double total)
+    /// <param name="nudge">Also retry near-miss cells shifted and enlarged (tilted priority cards). Only for a grid
+    /// that is already placed: while searching for the grid it would reward wrong positions.</param>
+    public int MatchGrid(Frame f, GridGeom g, int rows, int step, CellMatch[]? cells, out double total, bool nudge = false)
     {
         int good = 0; total = 0;
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < Cols; c++)
             {
-                var m = MatchCell(f, g, c, r, step);
+                var m = MatchCell(f, g, c, r, step, nudge);
                 if (cells != null) cells[r * Cols + c] = m;
                 if (m.Score >= MinScore) { good++; total += m.Score; }
             }
         return good;
     }
 
-    /// <summary>Cheap check that the grid is where it was last time (first two rows only).</summary>
-    public bool Confirm(Frame f, GridGeom g) => MatchGrid(f, g, 2, 2, null, out _) >= MinCards;
+    /// <summary>Cheap check that the grid is where it was last time (first AcceptRows rows).</summary>
+    public bool Confirm(Frame f, GridGeom g) => MatchGrid(f, g, AcceptRows, 2, null, out _) >= MinCards;
 
     /// <summary>
     /// Looks for the grid on a full client-area frame: tries the likely UI layouts for the window's aspect ratio
@@ -232,6 +271,6 @@ public sealed class Matcher
                 if (total > best) { best = total; fineDx = dx; fineDy = dy; }
             }
         found = GridGeom.Make(bestL.K, bestL.Ax, fineDx * bestL.K, bestL.Ay + fineDy * bestL.K);
-        return MatchGrid(f, found, 2, 1, null, out _) >= MinCards;
+        return MatchGrid(f, found, AcceptRows, 1, null, out _) >= MinCards;
     }
 }
