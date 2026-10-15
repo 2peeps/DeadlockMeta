@@ -334,7 +334,7 @@ public partial class App : Application
                     {
                         var cm = cells[r * Matcher.Cols + c];
                         string nm = cm.Score >= Matcher.MinScore && d.Heroes.TryGetValue(cm.HeroId, out var hi) ? hi.Name : "-";
-                        sb.Append(string.Create(CultureInfo.InvariantCulture, $"{nm,-14}{cm.Score:F2} | "));
+                        sb.Append(string.Create(CultureInfo.InvariantCulture, $"{nm,-14}{cm.Score:F2} c{cm.Chroma,-3:F0}| "));
                     }
                     sb.AppendLine();
                 }

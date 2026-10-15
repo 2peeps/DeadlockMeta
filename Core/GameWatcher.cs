@@ -12,8 +12,9 @@ public record struct HoverInfo(int HeroId, int PanelX, int PanelY, double Scale)
 /// </summary>
 sealed class GameWatcher(Settings settings)
 {
-    // Where the panel sits at 1080p relative to the grid's left edge: right of the screen title, above the grid.
-    const double PanelRefDx = 361, PanelRefY = 36;
+    // The panel sits just right of the grid, level with its top row. Above the grid it covered the title of the
+    // "build your roster" screen, which is longer than "hero select".
+    const double PanelGap = 16;
     const int IdleMs = 1000, LockedMs = 50;
     static readonly TimeSpan FullSearchEvery = TimeSpan.FromSeconds(3);
     static readonly TimeSpan ScanIdle = TimeSpan.FromMilliseconds(500), ScanWhileShown = TimeSpan.FromMilliseconds(200);
@@ -62,14 +63,15 @@ sealed class GameWatcher(Settings settings)
                     {
                         var sw = Stopwatch.StartNew();
                         string how = "";
-                        // The grid almost always sits where it was last time, so that spot is checked first and often.
-                        if (settings.GridClientW == client.Width && settings.GridClientH == client.Height)
+                        // The grid almost always sits where it was seen before, so those spots are checked first and often.
+                        foreach (var spot in settings.GridSpotsFor(client.Width, client.Height))
                         {
-                            double hk = settings.GridScale > 0 ? settings.GridScale : client.Height / 1080.0;
-                            var hint = GridGeom.Make(hk, 0, 0, 0) with { X0 = settings.GridX0, Y0 = settings.GridY0 };
+                            double hk = spot.Scale > 0 ? spot.Scale : client.Height / 1080.0;
+                            var hint = GridGeom.Make(hk, 0, 0, 0) with { X0 = spot.X0, Y0 = spot.Y0 };
                             if (CaptureGrid(grabber, client, hint, 2, frame) && m.Confirm(frame, hint))
                             {
                                 geom = hint; locked = true; how = "remembered position";
+                                break;
                             }
                         }
                         if (!locked && DateTime.UtcNow >= nextFullSearch)
@@ -79,9 +81,7 @@ sealed class GameWatcher(Settings settings)
                                 && m.FindGrid(frame, client.Width, client.Height, out geom))
                             {
                                 locked = true; how = "full search";
-                                settings.GridClientW = client.Width; settings.GridClientH = client.Height;
-                                settings.GridX0 = geom.X0; settings.GridY0 = geom.Y0; settings.GridScale = geom.Scale;
-                                settings.Save();
+                                settings.RememberGrid(client.Width, client.Height, geom.X0, geom.Y0, geom.Scale);
                             }
                         }
                         if (locked)
@@ -125,8 +125,11 @@ sealed class GameWatcher(Settings settings)
                         if (locked && over && known[hr * Matcher.Cols + hc] != 0)
                         {
                             double k = geom.Scale;
-                            hover = new HoverInfo(known[hr * Matcher.Cols + hc],
-                                client.X + (int)(geom.X0 + PanelRefDx * k), client.Y + (int)(PanelRefY * k), k);
+                            double px = geom.X0 + (Matcher.Cols - 1) * geom.PitchX + geom.CardW + PanelGap * k;
+                            // The game opens a small menu to the right of a hovered card; for the top row of the
+                            // right-hand columns it would land on the panel, so the panel steps down out of its way.
+                            double py = geom.Y0 + (hc >= Matcher.Cols - 2 && hr == 0 ? 2 * geom.PitchY : 0);
+                            hover = new HoverInfo(known[hr * Matcher.Cols + hc], client.X + (int)px, client.Y + (int)py, k);
                         }
                     }
                 }

@@ -27,13 +27,15 @@ public record struct GridGeom(double X0, double Y0, double PitchX, double PitchY
     }
 }
 
-public record struct CellMatch(int HeroId, float Score);
+/// <summary>Best hero for a grid cell; Chroma is how colourful the cell is (low for a greyed-out card).</summary>
+public record struct CellMatch(int HeroId, float Score, float Chroma = 0);
 
 /// <summary>Recognises hero cards on the hero select screen by comparing them with the card art.</summary>
 public sealed class Matcher
 {
     public const int Cols = 9, Rows = 7;
-    const int SigW = 10, SigH = 16, SigLen = SigW * SigH * 3;
+    const int SigW = 10, SigH = 16, Cells = SigW * SigH, SigLen = Cells * 3;
+    const int GrayW = 20, GrayH = 32, GrayLen = GrayW * GrayH;
     // Part of the card that is compared: skips the frame, the "new" ribbon on top and the lock icon at the bottom.
     const double InL = 0.10, InR = 0.90, InT = 0.17, InB = 0.86;
     // Empty cells score up to ~0.6 against some card, real cards 0.85 and up.
@@ -41,22 +43,35 @@ public sealed class Matcher
     // Cards that must be recognised in the first two rows (18 cells) to accept the grid. The hovered card covers
     // at most a few of them; other screens with hero art used to pass a lower bar and then drop out a second later.
     public const int MinCards = 12;
+    // Below this average channel spread a card counts as greyed out.
+    const float GreyChroma = 14;
+    // A greyed-out card must beat the runner-up by this much.
+    const float GreyMargin = 0.06f;
 
     readonly List<int> ids = [];
-    readonly List<float[]> sigs = [];
-    readonly float[] tmp = new float[SigLen];
+    // Each card is kept twice: in colour, and as brightness only. The "build your roster" screen shows heroes that
+    // are not in the roster desaturated and dimmed; those only match the brightness version.
+    readonly List<float[]> sigs = [], graySigs = [];
+    readonly float[] tmp = new float[SigLen], tmpGray = new float[GrayLen];
 
     public int TemplateCount => ids.Count;
 
     public void AddTemplate(int heroId, Frame card)
     {
         var s = new float[SigLen];
-        if (Signature(card, 0, 0, card.W, card.H, 1, s)) { ids.Add(heroId); sigs.Add(s); }
+        var gray = new float[GrayLen];
+        if (Signature(card, 0, 0, card.W, card.H, 1, s, gray)) { ids.Add(heroId); sigs.Add(s); graySigs.Add(gray); }
     }
 
-    // Box-averaged, mean/variance normalised thumbnail of a card. False when the card is off-frame or flat.
-    static bool Signature(Frame f, double x, double y, double w, double h, int step, float[] sig)
+    // Box-averaged, mean/variance normalised thumbnail of a card, in colour and in brightness.
+    // False when the card is off-frame or flat.
+    static bool Signature(Frame f, double x, double y, double w, double h, int step, float[] sig, float[] gray)
+        => Signature(f, x, y, w, h, step, sig, gray, out _);
+
+    /// <param name="chroma">Average colourfulness (max - min channel); near 0 for a greyed-out card.</param>
+    static bool Signature(Frame f, double x, double y, double w, double h, int step, float[] sig, float[] gray, out float chroma)
     {
+        chroma = 0;
         double ax = x - f.OriginX + w * InL, bx = x - f.OriginX + w * InR;
         double ay = y - f.OriginY + h * InT, by = y - f.OriginY + h * InB;
         if (ax < 0 || ay < 0 || bx > f.W || by > f.H) return false;
@@ -78,31 +93,83 @@ public sealed class Matcher
                         sb += px[o]; sg += px[o + 1]; sr += px[o + 2]; c++;
                     }
                 }
-                sig[n++] = (float)sb / c; sig[n++] = (float)sg / c; sig[n++] = (float)sr / c;
+                float b = (float)sb / c, g = (float)sg / c, r = (float)sr / c;
+                chroma += Math.Max(b, Math.Max(g, r)) - Math.Min(b, Math.Min(g, r));
+                sig[n++] = b; sig[n++] = g; sig[n++] = r;
             }
         }
+        chroma /= Cells;
+
+        // Brightness at twice the resolution: greyed-out cards are dim and low in contrast, so finer detail is
+        // what still tells them apart.
+        double gw = (bx - ax) / GrayW, gh = (by - ay) / GrayH;
+        n = 0;
+        for (int j = 0; j < GrayH; j++)
+        {
+            int y1 = (int)(ay + j * gh), y2 = Math.Max(y1 + 1, (int)(ay + (j + 1) * gh));
+            for (int i = 0; i < GrayW; i++)
+            {
+                int x1 = (int)(ax + i * gw), x2 = Math.Max(x1 + 1, (int)(ax + (i + 1) * gw));
+                int sum = 0, c = 0;
+                for (int yy = y1; yy < y2; yy += step)
+                {
+                    int o = (yy * f.W + x1) * 4;
+                    for (int xx = x1; xx < x2; xx += step, o += 4 * step)
+                    {
+                        sum += 29 * px[o] + 150 * px[o + 1] + 77 * px[o + 2];
+                        c++;
+                    }
+                }
+                gray[n++] = (float)sum / (c * 256);
+            }
+        }
+        return Normalise(sig) && Normalise(gray);
+    }
+
+    static bool Normalise(float[] v)
+    {
         double mean = 0;
-        for (int i = 0; i < SigLen; i++) mean += sig[i];
-        mean /= SigLen;
+        for (int i = 0; i < v.Length; i++) mean += v[i];
+        mean /= v.Length;
         double var = 0;
-        for (int i = 0; i < SigLen; i++) { sig[i] -= (float)mean; var += sig[i] * sig[i]; }
-        if (var < SigLen * 16) return false;
+        for (int i = 0; i < v.Length; i++) { v[i] -= (float)mean; var += v[i] * v[i]; }
+        if (var < v.Length * 16) return false;
         float inv = (float)(1 / Math.Sqrt(var));
-        for (int i = 0; i < SigLen; i++) sig[i] *= inv;
+        for (int i = 0; i < v.Length; i++) v[i] *= inv;
         return true;
     }
 
     CellMatch MatchCell(Frame f, GridGeom g, int col, int row, int step)
     {
         var m = new CellMatch(0, 0);
-        if (!Signature(f, g.X0 + col * g.PitchX, g.Y0 + row * g.PitchY, g.CardW, g.CardH, step, tmp)) return m;
+        if (!Signature(f, g.X0 + col * g.PitchX, g.Y0 + row * g.PitchY, g.CardW, g.CardH, step, tmp, tmpGray, out float chroma)) return m;
+        // A greyed-out card is compared by brightness only, a coloured one by colour only: mixing the two lets a
+        // colour card win on brightness alone.
+        bool grey = chroma < GreyChroma;
+        float second = 0;
         for (int t = 0; t < sigs.Count; t++)
         {
-            var s = sigs[t];
-            float dot = 0;
-            for (int i = 0; i < SigLen; i++) dot += s[i] * tmp[i];
-            if (dot > m.Score) m = new CellMatch(ids[t], dot);
+            float score = 0;
+            if (grey)
+            {
+                var gs = graySigs[t];
+                for (int i = 0; i < GrayLen; i++) score += gs[i] * tmpGray[i];
+            }
+            else
+            {
+                var s = sigs[t];
+                for (int i = 0; i < SigLen; i++) score += s[i] * tmp[i];
+            }
+            if (score > m.Score)
+            {
+                second = m.Score;
+                m = new CellMatch(ids[t], score, chroma);
+            }
+            else if (score > second) second = score;
         }
+        // Brightness alone is less telling (a grey Celeste once came out as Viscous): without a clear winner the
+        // card is left unrecognised rather than shown with another hero's winrate.
+        if (grey && m.Score - second < GreyMargin) m = m with { Score = Math.Min(m.Score, MinScore - 0.01f) };
         return m;
     }
 

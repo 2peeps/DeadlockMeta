@@ -69,11 +69,40 @@ public sealed class Settings
     /// </summary>
     public int HighBadge { get; set; } = 81;
 
+    // Where the hero grid was last seen. The game has more than one screen with it (hero select, build your
+    // roster) and they place it differently, so a few spots are kept. The single-spot fields are from older
+    // versions and only read once.
+    public List<GridSpot> GridSpots { get; set; } = [];
     public int GridClientW { get; set; }
     public int GridClientH { get; set; }
     public double GridX0 { get; set; }
     public double GridY0 { get; set; }
     public double GridScale { get; set; }
+
+    public sealed record GridSpot(int ClientW, int ClientH, double X0, double Y0, double Scale);
+
+    /// <summary>Remembers a grid position, most recent first.</summary>
+    public void RememberGrid(int clientW, int clientH, double x0, double y0, double scale)
+    {
+        lock (saveGate)
+        {
+            GridSpots.RemoveAll(s => s.ClientW == clientW && s.ClientH == clientH
+                && Math.Abs(s.X0 - x0) < 3 && Math.Abs(s.Y0 - y0) < 3);
+            GridSpots.Insert(0, new GridSpot(clientW, clientH, x0, y0, scale));
+            if (GridSpots.Count > 6) GridSpots.RemoveRange(6, GridSpots.Count - 6);
+        }
+        Save();
+    }
+
+    public List<GridSpot> GridSpotsFor(int clientW, int clientH)
+    {
+        lock (saveGate)
+        {
+            if (GridSpots.Count == 0 && GridClientW > 0)
+                GridSpots.Add(new GridSpot(GridClientW, GridClientH, GridX0, GridY0, GridScale));
+            return GridSpots.Where(s => s.ClientW == clientW && s.ClientH == clientH).ToList();
+        }
+    }
 
     public static readonly (int Badge, string Name)[] Ranks =
         [(0, "Все ранги"), (71, "Emissary+"), (81, "Oracle+"), (91, "Phantom+"), (101, "Ascendant+"), (111, "Eternus")];

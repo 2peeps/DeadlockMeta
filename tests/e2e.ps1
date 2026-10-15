@@ -1,6 +1,8 @@
 ﻿# End-to-end check without the game: shows a saved hero-select screenshot in a borderless window on the second
 # monitor, points the cursor at a few cards, grabs what is on screen and measures the overlay's CPU use.
-param([string]$AppPath = "$PSScriptRoot\..\app\DeadlockMeta.exe")
+# -Image picks the screenshot shown as the "game"; -Shots is "name:x:y,..." in that screenshot's pixels.
+param([string]$AppPath = "$PSScriptRoot\..\app\DeadlockMeta.exe", [string]$Image = "select_1080.png",
+      [string]$Shots = "abrams:105:210,ratking:189:613,empty:780:780")
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @'
 using System; using System.Runtime.InteropServices;
@@ -14,7 +16,7 @@ public static class U {
 '@
 [U]::SetProcessDPIAware() | Out-Null
 $ox = -1920; $oy = 6
-$script:img = [Drawing.Image]::FromFile((Resolve-Path "$PSScriptRoot\select_1080.png"))
+$script:img = [Drawing.Image]::FromFile((Resolve-Path (Join-Path $PSScriptRoot $Image)))
 $script:showImage = $true
 $form = New-Object Windows.Forms.Form
 $form.FormBorderStyle = 'None'; $form.StartPosition = 'Manual'; $form.BackColor = 'Black'
@@ -30,13 +32,15 @@ $saved = [Windows.Forms.Cursor]::Position
 $env:DEADLOCKMETA_PROCESS = 'powershell'
 $exe = Start-Process $AppPath -ArgumentList '--tray' -PassThru
 Pump 15000
-$shots = @(@('abrams', 105, 210), @('ratking', 189, 613), @('empty', 780, 780))
+$shots = $Shots -split "," | % { $p = $_ -split ":"; , @($p[0], [int]$p[1], [int]$p[2]) }
 foreach ($s in $shots) {
   [U]::SetCursorPos($ox + $s[1], $oy + $s[2]) | Out-Null
   Pump 600
-  $bmp = New-Object Drawing.Bitmap 860, 300
+  $bmp = New-Object Drawing.Bitmap 1300, 520
   $g = [Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($ox, $oy, 0, 0, $bmp.Size); $g.Dispose()
   $bmp.Save("$PSScriptRoot\e2e_$($s[0]).png"); $bmp.Dispose()
+  # The panel must never take the keyboard from the game (Esc and everything else would stop reaching it).
+  "{0}: game window still has focus: {1}" -f $s[0], ([U]::GetForegroundWindow() -eq $form.Handle)
 }
 Cpu 'hero select open' 8000
 # A real in-match frame: the watcher keeps searching for the grid on it, which is the cost during a match.
