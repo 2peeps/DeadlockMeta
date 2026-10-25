@@ -131,6 +131,12 @@ public partial class MainWindow
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
+        if (CrossLayer.Visibility == Visibility.Visible && e.Key == Key.Escape)
+        {
+            CloseCrossPanel();
+            e.Handled = true;
+            return;
+        }
         if (DetailLayer.Visibility != Visibility.Visible) return;
         if (e.Key == Key.Escape) { CloseDetails(); e.Handled = true; }
         else if (e.Key == Key.Left) { ShowBuild(buildIndex - 1); e.Handled = true; }
@@ -341,13 +347,13 @@ public partial class MainWindow
 
     static string Pct(double v) => v.ToString("F1", CultureInfo.InvariantCulture) + "%";
 
-    void ShowToast(string text)
+    void ShowToast(string text, double seconds = 1.8)
     {
         ToastText.Text = text;
         var a = new DoubleAnimationUsingKeyFrames();
         a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(150))));
-        a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1800))));
-        a.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(2200))));
+        a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(seconds))));
+        a.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(seconds + 0.4))));
         Toast.BeginAnimation(OpacityProperty, a);
     }
 

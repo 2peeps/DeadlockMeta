@@ -69,6 +69,13 @@ public sealed class Settings
     /// </summary>
     public int HighBadge { get; set; } = 81;
 
+    /// <summary>Applying a reticle also removes the per-hero reticles, so every hero gets it.</summary>
+    public bool CrosshairAllHeroes { get; set; } = true;
+    /// <summary>After the game closes, puts the chosen reticle back if the game changed it (e.g. after a patch).</summary>
+    public bool CrosshairGuard { get; set; } = true;
+    /// <summary>Random id for the crosshair popularity counts, so one install counts once; nothing else is sent.</summary>
+    public string InstallId { get; set; } = Guid.NewGuid().ToString("N");
+
     // Where the hero grid was last seen. The game has more than one screen with it (hero select, build your
     // roster) and they place it differently, so a few spots are kept. The single-spot fields are from older
     // versions and only read once.

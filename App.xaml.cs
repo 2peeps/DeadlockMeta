@@ -27,6 +27,7 @@ public partial class App : Application
 
     public Settings Settings { get; private set; } = new();
     public MetaData? Data { get; private set; }
+    public CrosshairService Crosshairs { get; private set; } = null!;
     public ImageSource? AppIcon { get; private set; }
 
     /// <summary>Raised on the UI thread when stats were (re)loaded or loading failed.</summary>
@@ -52,8 +53,10 @@ public partial class App : Application
 
         if (e.Args.Length >= 2 && e.Args[0] == "--shot")
         {
+            Crosshairs = new CrosshairService(Settings, watch: false);
             int hero = e.Args.Skip(2).Select(a => a.StartsWith("hero=") && int.TryParse(a[5..], out int h) ? h : 0).DefaultIfEmpty(0).Max();
-            await Screenshot(e.Args[1], e.Args.Contains("settings"), hero);
+            string tab = e.Args.Contains("settings") ? "settings" : e.Args.Contains("crosshairs") ? "crosshairs" : "";
+            await Screenshot(e.Args[1], tab, hero, e.Args.Skip(2).FirstOrDefault(a => a.StartsWith("panel="))?[6..]);
             Shutdown();
             return;
         }
@@ -64,6 +67,13 @@ public partial class App : Application
             foreach (var a in e.Args)
                 if (a.StartsWith("rank=") && int.TryParse(a[5..], out int badge)) Settings.HighBadge = badge;
             await SelfTestBuilds();
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Contains("--selftest-crosshairs"))
+        {
+            await SelfTestCrosshairs();
             Shutdown();
             return;
         }
@@ -100,6 +110,10 @@ public partial class App : Application
         Log.Write($"started {Updater.Current}");
         Updater.CleanUp();
         CreateTray();
+        // Keeps the install id that the crosshair counts use from changing between runs.
+        Settings.Save();
+        Crosshairs = new CrosshairService(Settings, watch: true);
+        Crosshairs.Notify += msg => tray?.ShowBalloonTip(6000, "Deadlock Meta", msg, WF.ToolTipIcon.Info);
 
         overlay = new OverlayWindow();
         new WindowInteropHelper(overlay).EnsureHandle();
@@ -110,9 +124,10 @@ public partial class App : Application
         if (!e.Args.Contains("--tray")) ShowMain();
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromHours(1) };
-        timer.Tick += async (_, _) => { await Reload(false); await CheckUpdate(); };
+        timer.Tick += async (_, _) => { await Reload(false); await Crosshairs.Load(false); await CheckUpdate(); };
         timer.Start();
         await Reload(false);
+        await Crosshairs.Load(false);
         await CheckUpdate();
     }
 
@@ -235,17 +250,24 @@ public partial class App : Application
         overlay.ShowHero(name, Core.Settings.RankName(d.HighBadge), high, all, hover.PanelX, hover.PanelY, hover.Scale);
     }
 
-    // DeadlockMeta.exe --shot out.png [settings] [hero=ID]: renders the main window off-screen into a PNG (for checking the UI).
-    async Task Screenshot(string path, bool settingsTab, int heroId)
+    // DeadlockMeta.exe --shot out.png [settings|crosshairs] [hero=ID] [panel=item|editor|import]: renders the main window
+    // off-screen into a PNG (for checking the UI).
+    async Task Screenshot(string path, string tab, int heroId, string? panel)
     {
         await Reload(false);
+        await Crosshairs.Load(false);
         var w = new MainWindow
         {
             WindowStartupLocation = WindowStartupLocation.Manual, Left = -5000, Top = 0,
             ShowActivated = false, ShowInTaskbar = false,
         };
         w.Show();
-        if (settingsTab) w.ShowSettingsTab();
+        if (tab == "settings") w.ShowSettingsTab();
+        if (tab == "crosshairs")
+        {
+            w.ShowCrosshairsTab();
+            if (panel != null) w.ShowCrossPanelForShot(panel);
+        }
         if (heroId > 0)
         {
             w.Height = 1500;
@@ -306,6 +328,66 @@ public partial class App : Application
         catch (Exception ex) { sb.AppendLine("FAILED: " + ex); failed++; }
         sb.AppendLine($"heroes with problems: {failed}");
         File.WriteAllText(Path.Combine(Settings.DataDir, "selftest.txt"), sb.ToString());
+    }
+
+    // DeadlockMeta.exe --selftest-crosshairs: round-trips every catalog reticle through each code format and writes the
+    // game's settings file on a copy (never the real one), then reports to data\crosshair_selftest.txt.
+    static async Task SelfTestCrosshairs()
+    {
+        var sb = new StringBuilder();
+        int failed = 0;
+        void Check(bool ok, string what)
+        {
+            if (!ok) failed++;
+            sb.AppendLine((ok ? "ok " : "!! ") + what);
+        }
+        try
+        {
+            var catalog = await CrosshairLibrary.LoadCatalog(false);
+            Check(catalog.Count > 200, $"catalog: {catalog.Count} reticles");
+            int bad = 0;
+            foreach (var item in catalog)
+            {
+                var c = item.Value;
+                foreach (var (name, text) in new[] { ("game", c.ToGameCode()), ("console", c.ToConsole()), ("legacy", c.ToLegacyCode()) })
+                    if (Crosshair.Parse(text, out string err) is not { } back || !back.SameAs(c))
+                    {
+                        bad++;
+                        sb.AppendLine($"!! {item.Id} {name}: {err} {text}");
+                    }
+            }
+            Check(bad == 0, "every reticle survives game code, console commands and the 19 numbers");
+            sb.AppendLine("sample game code: " + catalog[1].Value.ToGameCode());
+            sb.AppendLine("shapes: " + string.Join(", ", catalog.GroupBy(i => i.Shape).Select(g => $"{g.Key}={g.Count()}")));
+            Check(Crosshair.Parse("hello", out _) == null && Crosshair.Parse("DL.AAAA", out _) == null, "rubbish is refused");
+
+            if (CrosshairGame.SettingsFile() is { } real)
+            {
+                sb.AppendLine("settings file: " + real);
+                string copy = Path.Combine(Core.Settings.DataDir, "selftest_hero_settings.lst");
+                File.Copy(real, copy, true);
+                string before = File.ReadAllText(real);
+                var original = CrosshairGame.ReadBase(copy);
+                sb.AppendLine("game base now: " + original?.ToLegacyCode());
+                sb.AppendLine("heroes with own reticle: " + string.Join(", ", CrosshairGame.HeroOverrides(copy)));
+                var pick = catalog.First(i => i.Id == "c:cdot-green").Value;
+                CrosshairGame.WriteBase(copy, pick, allHeroes: false);
+                Check(CrosshairGame.ReadBase(copy)?.SameAs(pick) == true, "written base reads back");
+                Check(CrosshairGame.HeroOverrides(copy).Count == CrosshairGame.HeroOverrides(real).Count, "hero reticles kept when asked");
+                var otherLines = File.ReadAllLines(copy).Where(l => !l.Contains("crosshair_")).ToList();
+                Check(otherLines.SequenceEqual(File.ReadAllLines(real).Where(l => !l.Contains("crosshair_"))), "nothing but reticle lines changed");
+                CrosshairGame.WriteBase(copy, pick, allHeroes: true);
+                Check(CrosshairGame.HeroOverrides(copy).Count == 0, "hero reticles removed for one-for-all");
+                Check(CrosshairGame.ReadBase(copy)?.SameAs(pick) == true, "base still right after second write");
+                Check(File.ReadAllText(real) == before, "the real settings file was not touched");
+                File.Delete(copy);
+            }
+            else sb.AppendLine("-- no game settings file on this computer");
+            sb.AppendLine("old pre-rework reticle: " + (CrosshairGame.ReadLegacy()?.ToLegacyCode() ?? "none"));
+        }
+        catch (Exception ex) { sb.AppendLine("FAILED: " + ex); failed++; }
+        sb.AppendLine($"problems: {failed}");
+        File.WriteAllText(Path.Combine(Core.Settings.DataDir, "crosshair_selftest.txt"), sb.ToString());
     }
 
     // DeadlockMeta.exe --test screenshot.png [clientHeight]: writes what the matcher sees on a saved screenshot.

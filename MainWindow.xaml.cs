@@ -57,6 +57,7 @@ public partial class MainWindow : Window
             RankPanel.Children.Add(rb);
         }
         Check(RankPanel, app.Settings.HighBadge);
+        InitCrosshairs();
         app.DataChanged += Refresh;
         app.UpdateAvailable += ShowUpdate;
         ShowUpdate();
@@ -150,13 +151,34 @@ public partial class MainWindow : Window
         }
     }
 
-    public void ShowSettingsTab() => TabSettings.IsChecked = true;
+    public void ShowSettingsTab() => ShowView(SettingsView);
+
+    public void ShowCrosshairsTab() => TabCrosshairs.IsChecked = true;
 
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
-        if (HeroesView == null || SettingsView == null) return;
-        HeroesView.Visibility = TabHeroes.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        SettingsView.Visibility = TabSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        if (HeroesView == null || CrosshairsView == null) return;
+        ShowView(TabHeroes.IsChecked == true ? HeroesView : CrosshairsView);
+    }
+
+    // The gear is not one of the tabs: it unchecks them while settings are open, and a tab click brings them back.
+    void Gear_Click(object sender, RoutedEventArgs e)
+    {
+        if (SettingsView.Visibility == Visibility.Visible) ShowView(TabHeroes.IsChecked == true ? HeroesView : CrosshairsView);
+        else ShowView(SettingsView);
+    }
+
+    void ShowView(FrameworkElement view)
+    {
+        foreach (var v in new FrameworkElement[] { HeroesView, CrosshairsView, SettingsView })
+            v.Visibility = v == view ? Visibility.Visible : Visibility.Collapsed;
+        bool settings = view == SettingsView;
+        // Cleared rather than set back, so the style's hover colour keeps working.
+        if (settings) GearButton.Foreground = Res("Accent");
+        else GearButton.ClearValue(ForegroundProperty);
+        // A tab that is still checked cannot be clicked back to; clearing them while settings are open fixes that.
+        if (settings) TabHeroes.IsChecked = TabCrosshairs.IsChecked = false;
+        else if (view == CrosshairsView) OnCrosshairsShown();
     }
 
     void Sort_Click(object sender, RoutedEventArgs e)

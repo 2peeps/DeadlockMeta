@@ -26,7 +26,7 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="40,6,0,0" VerticalAlignment="Center"
                         WindowChrome.IsHitTestVisibleInChrome="True">
                 <RadioButton x:Name="TabHeroes" Content="ГЕРОИ" Style="{StaticResource Tab}" GroupName="tabs" IsChecked="True" Checked="Tab_Checked"/>
-                <RadioButton x:Name="TabSettings" Content="НАСТРОЙКИ" Style="{StaticResource Tab}" GroupName="tabs" Checked="Tab_Checked"/>
+                <RadioButton x:Name="TabCrosshairs" Content="ПРИЦЕЛЫ" Style="{StaticResource Tab}" GroupName="tabs" Checked="Tab_Checked"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" WindowChrome.IsHitTestVisibleInChrome="True">
                 <Button x:Name="UpdateButton" Visibility="Collapsed" Margin="0,16,12,0" Click="Update_Click"
@@ -48,6 +48,9 @@
                         </ControlTemplate>
                     </Button.Template>
                 </Button>
+                <!-- Settings live behind the gear so new sections can be added as tabs without moving them -->
+                <Button x:Name="GearButton" Content="&#xE713;" Style="{StaticResource GhostButton}" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                        Padding="14,10,14,9" Click="Gear_Click" ToolTip="Настройки"/>
                 <Button Content="—" Style="{StaticResource GhostButton}" FontFamily="{StaticResource Body}" FontSize="13" Padding="14,10,14,10" Click="Minimize_Click"/>
                 <Button Content="✕" Style="{StaticResource GhostButton}" FontFamily="{StaticResource Body}" FontSize="13" Padding="14,10,14,10" Click="Close_Click"/>
             </StackPanel>
@@ -148,8 +151,57 @@
                        HorizontalAlignment="Center" VerticalAlignment="Center" Text="Загрузка статистики…"/>
         </Grid>
 
+        <!-- Crosshairs: catalog and the player's own list; cards and panels are built in MainWindow.Crosshairs.cs -->
+        <Grid x:Name="CrosshairsView" Grid.Row="2" Margin="28,18,20,0" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Grid Margin="0,0,8,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel x:Name="CrossModePanel" Orientation="Horizontal"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="ВСТАВИТЬ КОД" Style="{StaticResource FlatButton}" Click="CrossImport_Click"
+                            ToolTip="Код из игры, с сайта или от друга"/>
+                    <Button Content="+ СОЗДАТЬ СВОЙ" Style="{StaticResource AccentButton}" Margin="8,0,0,0" Click="CrossCreate_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- What the game has now and what happens next -->
+            <Border x:Name="CrossBanner" Grid.Row="1" Margin="0,14,8,0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                    BorderThickness="1" CornerRadius="4" Padding="12,10,12,10"/>
+
+            <Grid Grid.Row="2" Margin="0,14,8,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <WrapPanel x:Name="CrossShapePanel"/>
+                    <WrapPanel x:Name="CrossColorPanel" Margin="0,4,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Top" HorizontalAlignment="Right">
+                    <TextBlock Text="ФОН ПРЕВЬЮ" Style="{StaticResource Label}" FontSize="12" HorizontalAlignment="Right"/>
+                    <StackPanel x:Name="CrossBgPanel" Orientation="Horizontal" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Grid>
+
+            <ScrollViewer x:Name="CrossScrollGrid" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                <WrapPanel x:Name="CrossGrid" Margin="0,0,0,20"/>
+            </ScrollViewer>
+            <TextBlock x:Name="CrossEmpty" Grid.Row="3" Foreground="{StaticResource Muted}" FontSize="15" TextWrapping="Wrap" TextAlignment="Center"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460" Visibility="Collapsed"/>
+        </Grid>
+
         <!-- Settings -->
-        <StackPanel x:Name="SettingsView" Grid.Row="2" Margin="28,24,28,0" Visibility="Collapsed">
+        <ScrollViewer x:Name="SettingsView" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel Margin="28,24,28,24">
             <TextBlock Text="ОВЕРЛЕЙ В ИГРЕ" Style="{StaticResource Label}"/>
             <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                 <CheckBox x:Name="OverlayToggle" Style="{StaticResource Toggle}" Click="OverlayToggle_Click"/>
@@ -167,6 +219,19 @@
 
             <TextBlock Text="Ранг выбирается над таблицей героев." Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,8,0,0"/>
 
+            <TextBlock Text="ПРИЦЕЛ" Style="{StaticResource Label}" Margin="0,30,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                <CheckBox x:Name="CrossGuardToggle" Style="{StaticResource Toggle}" Click="CrossGuardToggle_Click"/>
+                <TextBlock Text="Возвращать мой прицел, если игра его сбросит" FontSize="14" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                <CheckBox x:Name="CrossHeroesToggle" Style="{StaticResource Toggle}" Click="CrossHeroesToggle_Click"/>
+                <TextBlock Text="Один прицел для всех героев (убирать отдельные прицелы героев)" FontSize="14" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </StackPanel>
+            <TextBlock Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,8,0,10" TextWrapping="Wrap"
+                       Text="Прицел записывается в файл настроек игры, только когда игра закрыта. Перед каждой записью программа сохраняет копию этого файла."/>
+            <Button Content="ОТКРЫТЬ КОПИИ НАСТРОЕК ИГРЫ" Style="{StaticResource FlatButton}" HorizontalAlignment="Left" Click="OpenBackups_Click"/>
+
             <TextBlock Text="ДАННЫЕ" Style="{StaticResource Label}" Margin="0,30,0,0"/>
             <TextBlock Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,8,0,10" TextWrapping="Wrap"
                        Text="Источник: deadlock-api.com (открытая статистика сообщества). Обновляется автоматически раз в несколько часов."/>
@@ -176,6 +241,7 @@
             </StackPanel>
             <TextBlock x:Name="VersionText" Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,30,0,0"/>
         </StackPanel>
+        </ScrollViewer>
 
         <!-- Hero details: slides in from the right over the table when a hero is clicked -->
         <Grid x:Name="DetailLayer" Grid.Row="2" Visibility="Collapsed">
@@ -216,10 +282,36 @@
             </Border>
         </Grid>
 
+        <!-- Crosshair panel: one reticle up close, the editor, or pasting a code -->
+        <Grid x:Name="CrossLayer" Grid.Row="2" Visibility="Collapsed">
+            <Border x:Name="CrossDim" Background="#000000" Opacity="0" MouseLeftButtonDown="CrossDim_Click"/>
+            <Border x:Name="CrossPanel" Width="580" HorizontalAlignment="Right" Background="{StaticResource Panel}"
+                    BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="CrossShift"/>
+                </Border.RenderTransform>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Margin="24,16,12,10">
+                        <TextBlock x:Name="CrossTitle" FontFamily="{StaticResource Display}" FontStretch="Condensed" FontWeight="Bold"
+                                   FontSize="26" Foreground="{StaticResource Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,48,0"/>
+                        <Button Content="✕" Style="{StaticResource GhostButton}" FontFamily="{StaticResource Body}" HorizontalAlignment="Right"
+                                FontSize="14" Padding="12,8,12,8" VerticalAlignment="Top" Click="CrossClose_Click"/>
+                    </Grid>
+                    <ScrollViewer x:Name="CrossScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <StackPanel x:Name="CrossBody" Margin="24,0,24,24"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
         <!-- Short confirmation, e.g. after copying a build ID -->
         <Border x:Name="Toast" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24"
                 Background="{StaticResource Text}" CornerRadius="3" Padding="16,8,16,9" Opacity="0" IsHitTestVisible="False">
-            <TextBlock x:Name="ToastText" Foreground="{StaticResource Bg}" FontSize="13.5" FontWeight="SemiBold"/>
+            <TextBlock x:Name="ToastText" Foreground="{StaticResource Bg}" FontSize="13.5" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="560" TextAlignment="Center"/>
         </Border>
     </Grid>
 </Window>
