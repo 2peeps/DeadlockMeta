@@ -32,6 +32,10 @@ $saved = [Windows.Forms.Cursor]::Position
 $env:DEADLOCKMETA_PROCESS = 'powershell'
 $exe = Start-Process $AppPath -ArgumentList '--tray' -PassThru
 Pump 15000
+# Starting the app can hand the foreground to another program (seen with Telegram); take it back for the "game".
+[U]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [U]::SetForegroundWindow($form.Handle) | Out-Null; [U]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+Pump 1500
+"foreground is test window after start: $([U]::GetForegroundWindow() -eq $form.Handle)"
 $points = @($Shots -split "," | % { $p = $_ -split ":"; , @($p[0], [int]$p[1], [int]$p[2]) })
 foreach ($s in $points) {
   [U]::SetCursorPos($ox + $s[1], $oy + $s[2]) | Out-Null
@@ -46,7 +50,11 @@ foreach ($s in $points) {
 Cpu 'hero select open' 8000
 # A real in-match frame: the watcher keeps searching for the grid on it, which is the cost during a match.
 $script:img.Dispose(); $script:img = [Drawing.Image]::FromFile((Resolve-Path "$PSScriptRoot\match_1080.png")); $form.Invalidate()
-Cpu 'game in foreground, other screen (like in a match)' 12000
+Cpu 'game in foreground, other screen, cursor visible (shop, menus)' 12000
+# In a match the game hides the cursor for mouse look; the watcher must then not read the screen at all.
+[Windows.Forms.Cursor]::Hide()
+Cpu 'in a match: cursor hidden' 12000
+[Windows.Forms.Cursor]::Show()
 $exe.Refresh(); "memory: working set {0:N0} MB, private {1:N0} MB" -f ($exe.WorkingSet64 / 1MB), ($exe.PrivateMemorySize64 / 1MB)
 [U]::SetCursorPos($saved.X, $saved.Y) | Out-Null
 Stop-Process -Id $exe.Id -Force

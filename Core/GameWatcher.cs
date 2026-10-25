@@ -58,6 +58,7 @@ sealed class GameWatcher(Settings settings)
         int misses = 0;
         HoverInfo? shown = null;
         DateTime nextFullSearch = DateTime.MinValue, nextScan = DateTime.MinValue;
+        bool cursorWasShown = true;
 
         while (!stop)
         {
@@ -66,7 +67,16 @@ sealed class GameWatcher(Settings settings)
             try
             {
                 var m = matcher;
-                if (m != null && settings.OverlayEnabled && grabber.GameClient(out var client))
+                // In a match the game hides the cursor for mouse look, and the hero grid cannot be on screen. Reading
+                // the screen then costs the game frames (the capture waits for the GPU), so nothing is read at all.
+                bool cursorShown = Native.CursorShown();
+                if (cursorShown != cursorWasShown)
+                {
+                    cursorWasShown = cursorShown;
+                    // Logged always: it is what to check if the panel stops showing on hero select.
+                    Log.Write(cursorShown ? "cursor shown: watching the screen" : "cursor hidden: screen reads paused");
+                }
+                if (m != null && settings.OverlayEnabled && cursorShown && grabber.GameClient(out var client))
                 {
                     if (locked && client != lockedClient) locked = false;
                     if (!locked)

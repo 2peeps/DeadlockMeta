@@ -15,6 +15,16 @@ static class Native
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out RECT r);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hwnd, ref POINT p);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+    [StructLayout(LayoutKind.Sequential)] public struct CURSORINFO { public int cbSize, flags; public IntPtr hCursor; public POINT pt; }
+    [DllImport("user32.dll")] static extern bool GetCursorInfo(ref CURSORINFO ci);
+    const int CURSOR_SHOWING = 1;
+
+    /// <summary>False while a game hides the mouse cursor (mouse look in a match).</summary>
+    public static bool CursorShown()
+    {
+        var ci = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
+        return !GetCursorInfo(ref ci) || (ci.flags & CURSOR_SHOWING) != 0;
+    }
     [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hwnd, int index, int value);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);

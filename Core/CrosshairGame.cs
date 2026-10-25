@@ -21,16 +21,35 @@ public static class CrosshairGame
     static readonly Regex KeyValueRx = new(@"^(\s*)([A-Za-z0-9_]+)\s*=\s*""?([^""]*)""?\s*$", RegexOptions.Compiled);
     static readonly Regex BlockNameRx = new(@"^\s*([A-Za-z0-9_]+)\s*=\s*(\{)?\s*$", RegexOptions.Compiled);
 
+    static readonly object runningGate = new();
+    static Process? running;
+
     public static bool IsGameRunning()
     {
-        foreach (string name in new[] { "deadlock", "project8" })
+        // While the game runs only its own process is checked; the list of all processes (a few ms) is read only
+        // while it is closed, so the check costs nothing during a match.
+        lock (runningGate)
         {
-            var ps = Process.GetProcessesByName(name);
-            bool any = ps.Length > 0;
-            foreach (var p in ps) p.Dispose();
-            if (any) return true;
+            if (running != null)
+            {
+                try
+                {
+                    if (!running.HasExited) return true;
+                }
+                catch { }
+                running.Dispose();
+                running = null;
+            }
+            foreach (string name in new[] { "deadlock", "project8" })
+            {
+                var ps = Process.GetProcessesByName(name);
+                for (int i = 0; i < ps.Length; i++)
+                    if (i == 0) running = ps[0];
+                    else ps[i].Dispose();
+                if (running != null) return true;
+            }
+            return false;
         }
-        return false;
     }
 
     public static string? SteamDir()
