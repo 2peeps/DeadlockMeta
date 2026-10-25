@@ -15,6 +15,10 @@ public sealed class CrosshairItem
     public string Code { get; set; } = "";
     public DateTime Added { get; set; }
 
+    /// <summary>Catalog shape this is one colour of; a reticle with no siblings is its own group.</summary>
+    [JsonIgnore] public string Group { get => string.IsNullOrEmpty(group) ? Id : group; set => group = value; }
+    string? group;
+
     [JsonIgnore] public string Source { get; set; } = "";
     [JsonIgnore] public long Applies { get; set; }
     [JsonIgnore] public long Likes { get; set; }
@@ -32,14 +36,16 @@ public static class CrosshairStyle
 {
     public static readonly (string Key, string Name)[] Shapes =
     [
-        ("", "Все"), ("dot", "Точка"), ("cross", "Крестик"), ("crossdot", "Крестик с точкой"),
-        ("plus", "Плюс"), ("ring", "Кружок"), ("moving", "Расходится при стрельбе"),
+        ("", "Все"), ("dot", "Точка"), ("ring", "Кружок и мишень"), ("cross", "Крестик"), ("crossdot", "Крестик с точкой"),
+        ("plus", "Плюс"), ("squares", "Квадратики"), ("hollow", "Контурные"), ("combo", "С кругом"),
+        ("moving", "Расходится при стрельбе"),
     ];
 
     public static readonly (string Name, byte R, byte G, byte B)[] Colors =
     [
-        ("Белый", 255, 255, 255), ("Зелёный", 0, 255, 0), ("Голубой", 0, 255, 255), ("Жёлтый", 255, 255, 0),
-        ("Розовый", 255, 0, 255), ("Красный", 255, 0, 0), ("Оранжевый", 255, 140, 0), ("Синий", 40, 110, 255),
+        ("Белый", 255, 255, 255), ("Зелёный", 0, 255, 0), ("Лаймовый", 190, 255, 0), ("Голубой", 0, 255, 255),
+        ("Синий", 40, 110, 255), ("Фиолетовый", 170, 90, 255), ("Розовый", 255, 0, 255), ("Красный", 255, 0, 0),
+        ("Оранжевый", 255, 140, 0), ("Жёлтый", 255, 255, 0), ("Чёрный", 0, 0, 0),
     ];
 
     // The game draws a static reticle's pips this far from the centre at gap 0 (1080p).
@@ -49,11 +55,18 @@ public static class CrosshairStyle
     public static bool HasDot(Crosshair c) => c[CrosshairField.DotOpacity] > 0.05 && c[CrosshairField.DotSize] > 0;
     public static bool HasRing(Crosshair c) => c[CrosshairField.DotBorder] > 0 && c[CrosshairField.DotBorderOpacity] > 0.05 && c[CrosshairField.DotBorderGap] >= 3;
 
+    /// <summary>Pips with only their outline showing: hollow boxes.</summary>
+    public static bool HasHollowPips(Crosshair c) => c[CrosshairField.PipOpacity] <= 0.05 && c[CrosshairField.PipBorder] > 0
+        && c[CrosshairField.PipBorderOpacity] > 0.05 && c[CrosshairField.Height] > 0;
+
     public static string Shape(Crosshair c)
     {
-        if (HasPips(c))
+        if (HasPips(c) || HasHollowPips(c))
         {
             if (!c.StaticGap) return "moving";
+            if (HasRing(c)) return "combo";
+            if (HasHollowPips(c)) return "hollow";
+            if (c[CrosshairField.Height] <= c[CrosshairField.Width] * 1.2) return "squares";
             double inner = StaticBase + c[CrosshairField.Gap] - c[CrosshairField.Height] / 2;
             if (inner <= 1) return "plus";
             return HasDot(c) ? "crossdot" : "cross";
@@ -142,7 +155,7 @@ public sealed class CrosshairLibrary
             list.Add(new CrosshairItem
             {
                 Id = "c:" + e.GetProperty("id").GetString(), Name = e.GetProperty("name").GetString() ?? "", Code = code,
-                Source = "catalog", Order = order++,
+                Group = e.TryGetProperty("group", out var g) ? g.GetString() ?? "" : "", Source = "catalog", Order = order++,
             });
         }
         return list;

@@ -120,6 +120,8 @@ public partial class MainWindow
 
     bool crossReady;
     string crossMode = "all", crossShape = "", crossColor = "";
+    // Colour picked on a card, by shape: the card keeps it while the app runs.
+    readonly Dictionary<string, string> groupPick = [];
     int crossBg;
     CrosshairPreview? panelPreview;
     // The editor and the paste panel stay open when a reticle is applied from them; the reticle panel is redrawn.
@@ -250,7 +252,7 @@ public partial class MainWindow
 
     void RenderCrossModes()
     {
-        var modes = new List<(string Key, string Name)> { ("all", $"ВСЕ ПРИЦЕЛЫ ({Cross.All.Count()})") };
+        var modes = new List<(string Key, string Name)> { ("all", $"ВСЕ ПРИЦЕЛЫ ({Cross.All.Select(i => i.Group).Distinct().Count()})") };
         if (CrosshairServer.Enabled) modes.Add(("community", $"ОТ ИГРОКОВ ({Cross.Community.Count})"));
         modes.Add(("mine", $"МОИ ({Cross.MyList().Count})"));
         CrossModePanel.Children.Clear();
@@ -262,39 +264,55 @@ public partial class MainWindow
         }
     }
 
-    List<CrosshairItem> CrossItems()
+    /// <summary>
+    /// The cards to show: one per shape, with the colour the player picked on its card (or the colour filter, or the
+    /// one in the game). Each card keeps the shape's other colours for its colour dots.
+    /// </summary>
+    List<(CrosshairItem Shown, List<CrosshairItem> Variants)> CrossCards()
     {
-        IEnumerable<CrosshairItem> items = crossMode switch
+        if (crossMode == "mine")
+            return Cross.MyList()
+                .Where(i => (crossShape.Length == 0 || i.Shape == crossShape) && (crossColor.Length == 0 || i.ColorName == crossColor))
+                .Select(i => (i, new List<CrosshairItem> { i })).ToList();
+
+        var source = crossMode == "community" ? Cross.Community.OrderByDescending(i => i.Added) : Cross.All.OrderBy(i => i.Order);
+        var cards = new List<(CrosshairItem, List<CrosshairItem>)>();
+        foreach (var g in source.GroupBy(i => i.Group))
         {
-            "mine" => Cross.MyList(),
-            "community" => Cross.Community.OrderByDescending(i => i.Added),
-            // Most applied first once the server counts them; otherwise the catalog's own order.
-            _ => Cross.All.OrderByDescending(i => i.Applies).ThenBy(i => i.Source == "catalog" ? 0 : 1).ThenBy(i => i.Order),
-        };
-        if (crossShape.Length > 0) items = items.Where(i => i.Shape == crossShape);
-        if (crossColor.Length > 0) items = items.Where(i => i.ColorName == crossColor);
-        return items.ToList();
+            var variants = g.ToList();
+            if (crossShape.Length > 0 && variants[0].Shape != crossShape) continue;
+            CrosshairItem? shown = crossColor.Length > 0
+                ? variants.FirstOrDefault(v => v.ColorName == crossColor)
+                : variants.FirstOrDefault(v => groupPick.TryGetValue(g.Key, out string? id) && v.Id == id)
+                  ?? variants.FirstOrDefault(IsApplied) ?? variants[0];
+            if (shown != null) cards.Add((shown, variants));
+        }
+        // Most applied first once the server counts them (all colours of a shape together); otherwise catalog order.
+        if (crossMode == "all")
+            cards = cards.OrderByDescending(c => c.Item2.Sum(v => v.Applies)).ThenBy(c => c.Item1.Source == "catalog" ? 0 : 1)
+                .ThenBy(c => c.Item1.Order).ToList();
+        return cards;
     }
 
     void RenderCrossGrid()
     {
-        var items = CrossItems();
+        var cards = CrossCards();
         CrossGrid.Children.Clear();
         if (crossMode == "mine") CrossGrid.Children.Add(TakeFromGameCard());
-        foreach (var item in items) CrossGrid.Children.Add(CrossCard(item));
+        foreach (var (shown, variants) in cards) CrossGrid.Children.Add(CrossCard(shown, variants));
 
         string? empty = null;
         if (Cross.Catalog.Count == 0 && crossMode == "all") empty = "Загрузка прицелов…";
-        else if (items.Count == 0 && crossMode == "mine" && crossShape.Length == 0 && crossColor.Length == 0)
-            empty = null;
-        else if (items.Count == 0) empty = "Таких прицелов нет. Выбери другую форму или цвет.";
+        // An empty "mine" still has the "save the game's reticle" card, which says what to do.
+        else if (cards.Count == 0 && !(crossMode == "mine" && crossShape.Length == 0 && crossColor.Length == 0))
+            empty = "Таких прицелов нет. Выбери другую форму или цвет.";
         CrossEmpty.Text = empty ?? "";
         CrossEmpty.Visibility = empty != null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     bool IsApplied(CrosshairItem item) => Cross.Library.Active is { } a && (a.Id == item.Id || a.Code == item.Value.ToLegacyCode());
 
-    FrameworkElement CrossCard(CrosshairItem item)
+    FrameworkElement CrossCard(CrosshairItem item, List<CrosshairItem> variants)
     {
         bool active = IsApplied(item);
         var preview = new CrosshairPreview { Value = item.Value, Height = 104, BackgroundIndex = crossBg };
@@ -320,6 +338,33 @@ public partial class MainWindow
             LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Height = 34,
             TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = item.Name,
         });
+
+        // The shape's other colours: a click recolours this card in place. The row is there (empty) on one-colour
+        // cards too, so all cards in a row line up.
+        var swatches = new WrapPanel { Height = 14, Margin = new Thickness(0, 4, 0, 0), ClipToBounds = true };
+        if (variants.Count > 1)
+            foreach (var v in variants)
+            {
+                var (r, g, b) = v.Value.Color;
+                var (or, og, ob) = v.Value.Outline;
+                bool twoTone = v.Group.StartsWith("duo-");
+                var dot = new Border
+                {
+                    Width = 12, Height = 12, CornerRadius = new CornerRadius(6), Margin = new Thickness(0, 0, 2, 2), Cursor = Cursors.Hand,
+                    Background = new SolidColorBrush(Color.FromRgb(r, g, b)), ToolTip = v.Name,
+                    BorderThickness = new Thickness(v == item ? 2 : twoTone ? 3 : 1),
+                    BorderBrush = v == item ? Res("Text") : twoTone ? new SolidColorBrush(Color.FromRgb(or, og, ob)) : Res("Line"),
+                };
+                dot.MouseLeftButtonUp += (_, e) =>
+                {
+                    e.Handled = true;
+                    groupPick[v.Group] = v.Id;
+                    var card = (FrameworkElement)CrossGrid.Children.Cast<FrameworkElement>().First(c => c.Tag == variants);
+                    CrossGrid.Children[CrossGrid.Children.IndexOf(card)] = CrossCard(v, variants);
+                };
+                swatches.Children.Add(dot);
+            }
+        body.Children.Add(swatches);
 
         var meta = new Grid { Margin = new Thickness(0, 2, 0, 8) };
         meta.ColumnDefinitions.Add(new ColumnDefinition());
@@ -357,6 +402,7 @@ public partial class MainWindow
         {
             Width = 182, Margin = new Thickness(0, 0, 10, 10), Background = Res("Panel"), CornerRadius = new CornerRadius(4),
             BorderThickness = new Thickness(1), BorderBrush = active ? Res("Accent") : Res("Line"), Cursor = Cursors.Hand, Child = stack,
+            Tag = variants,
         };
         card.MouseEnter += (_, _) => { if (!active) card.BorderBrush = Res("Muted"); };
         card.MouseLeave += (_, _) => { if (!active) card.BorderBrush = Res("Line"); };
