@@ -28,6 +28,7 @@ public partial class App : Application
     public Settings Settings { get; private set; } = new();
     public MetaData? Data { get; private set; }
     public CrosshairService Crosshairs { get; private set; } = null!;
+    public HudModService Hud { get; private set; } = null!;
     public ImageSource? AppIcon { get; private set; }
 
     /// <summary>Raised on the UI thread when stats were (re)loaded or loading failed.</summary>
@@ -54,8 +55,9 @@ public partial class App : Application
         if (e.Args.Length >= 2 && e.Args[0] == "--shot")
         {
             Crosshairs = new CrosshairService(Settings, watch: false);
+            Hud = new HudModService(Settings, watch: false);
             int hero = e.Args.Skip(2).Select(a => a.StartsWith("hero=") && int.TryParse(a[5..], out int h) ? h : 0).DefaultIfEmpty(0).Max();
-            string tab = e.Args.Contains("settings") ? "settings" : e.Args.Contains("crosshairs") ? "crosshairs" : "";
+            string tab = e.Args.Contains("settings") ? "settings" : e.Args.Contains("crosshairs") ? "crosshairs" : e.Args.Contains("hud") ? "hud" : "";
             await Screenshot(e.Args[1], tab, hero, e.Args.Skip(2).FirstOrDefault(a => a.StartsWith("panel="))?[6..]);
             Shutdown();
             return;
@@ -74,6 +76,13 @@ public partial class App : Application
         if (e.Args.Contains("--selftest-crosshairs"))
         {
             await SelfTestCrosshairs();
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Contains("--selftest-hud"))
+        {
+            SelfTestHud();
             Shutdown();
             return;
         }
@@ -114,6 +123,8 @@ public partial class App : Application
         Settings.Save();
         Crosshairs = new CrosshairService(Settings, watch: true);
         Crosshairs.Notify += msg => tray?.ShowBalloonTip(6000, "Deadlock Meta", msg, WF.ToolTipIcon.Info);
+        Hud = new HudModService(Settings, watch: true);
+        Hud.Notify += msg => tray?.ShowBalloonTip(6000, "Deadlock Meta", msg, WF.ToolTipIcon.Info);
 
         overlay = new OverlayWindow();
         new WindowInteropHelper(overlay).EnsureHandle();
@@ -263,6 +274,7 @@ public partial class App : Application
         };
         w.Show();
         if (tab == "settings") w.ShowSettingsTab();
+        if (tab == "hud") w.ShowHudTab();
         if (tab == "crosshairs")
         {
             w.ShowCrosshairsTab();
@@ -388,6 +400,80 @@ public partial class App : Application
         catch (Exception ex) { sb.AppendLine("FAILED: " + ex); failed++; }
         sb.AppendLine($"problems: {failed}");
         File.WriteAllText(Path.Combine(Core.Settings.DataDir, "crosshair_selftest.txt"), sb.ToString());
+    }
+
+    // DeadlockMeta.exe --selftest-hud: builds the HUD mod from the installed game without installing it, reads the
+    // pack and its files back, and patches a copy of gameinfo.gi both ways; reports to data\hud_selftest.txt and
+    // leaves the pack and the decoded files in data\hud_selftest\ to look at.
+    static void SelfTestHud()
+    {
+        var sb = new StringBuilder();
+        int failed = 0;
+        void Check(bool ok, string what)
+        {
+            if (!ok) failed++;
+            sb.AppendLine((ok ? "ok " : "!! ") + what);
+        }
+        try
+        {
+            if (CrosshairGame.GameDir() is not { } game) throw new DirectoryNotFoundException("game not found");
+            sb.AppendLine($"game: {game}, build {HudMod.GameBuild(game)}");
+            string dir = Path.Combine(Core.Settings.DataDir, "hud_selftest");
+            Directory.CreateDirectory(dir);
+            var options = new HudOptions(true, true, true, true, 75, 115);
+            var files = HudMod.BuildFiles(game, options);
+            byte[] vpk = Core.Vpk.Build(files);
+            File.WriteAllBytes(Path.Combine(dir, "pak_selftest_dir.vpk"), vpk);
+            Check(vpk.Length > 0, $"pack built: {vpk.Length} bytes, {files.Count} files");
+
+            using var pak = new SteamDatabase.ValvePak.Package();
+            pak.Read(Path.Combine(dir, "pak_selftest_dir.vpk"));
+            try
+            {
+                pak.VerifyHashes();
+                Check(true, "pack checksums verify");
+            }
+            catch (Exception ex) { Check(false, "pack checksums: " + ex.Message); }
+            foreach (var (path, bytes) in files)
+            {
+                var entry = pak.FindEntry(path);
+                byte[]? back = null;
+                if (entry != null) pak.ReadEntry(entry, out back);
+                Check(back != null && back.AsSpan().SequenceEqual(bytes), "pack returns " + path);
+                using var res = new ValveResourceFormat.Resource();
+                res.Read(new MemoryStream(bytes));
+                string text = res.DataBlock is ValveResourceFormat.ResourceTypes.PanoramaLayout layout
+                    ? layout.ToString()!
+                    : Encoding.UTF8.GetString(((ValveResourceFormat.ResourceTypes.Panorama)res.DataBlock!).Data);
+                File.WriteAllText(Path.Combine(dir, Path.GetFileName(path) + ".txt"), text);
+                sb.AppendLine($"   {path}: resource v{res.Version}, blocks {string.Join(",", res.Blocks.Select(b => b.Type))}");
+                if (path.EndsWith(".vxml_c"))
+                {
+                    Check(text.Contains("s2r://panorama/scripts/dlmeta_hud.vts"), "layout includes the mod's script");
+                    Check(text.Contains("<CitadelHud id=\"Hud\""), "layout still has the game's HUD");
+                }
+                else Check(text == HudMod.ScriptSource(options), "script text reads back unchanged");
+            }
+
+            string gameinfo = Path.Combine(game, "game", "citadel", "gameinfo.gi");
+            string original = File.ReadAllText(gameinfo);
+            sb.AppendLine("game's gameinfo.gi has addons path: " + original.Contains("citadel/addons"));
+            Check(true, "(gameinfo patching is checked on a copy below)");
+            string copyGame = Path.Combine(dir, "fakegame");
+            Directory.CreateDirectory(Path.Combine(copyGame, "game", "citadel"));
+            File.WriteAllText(Path.Combine(copyGame, "game", "citadel", "gameinfo.gi"), original);
+            File.Copy(Path.Combine(game, "game", "citadel", "steam.inf"), Path.Combine(copyGame, "game", "citadel", "steam.inf"), true);
+            HudMod.RepairGameInfo(copyGame);
+            string patched = File.ReadAllText(Path.Combine(copyGame, "game", "citadel", "gameinfo.gi"));
+            int at = patched.IndexOf("citadel/addons", StringComparison.Ordinal);
+            Check(at > 0 && at < patched.IndexOf("Game\t\t\t\tcore", StringComparison.Ordinal), "copy of gameinfo.gi gets the addons path before the game's files");
+            sb.AppendLine(string.Join(Environment.NewLine, patched.Split('\n').Where(l => l.Contains("citadel") && !l.Contains("//")).Select(l => "   | " + l.TrimEnd())));
+            Check(!HudMod.RepairGameInfo(copyGame), "patching twice changes nothing");
+            Check(File.ReadAllText(gameinfo) == original, "the game's own gameinfo.gi was not touched");
+        }
+        catch (Exception ex) { sb.AppendLine("FAILED: " + ex); failed++; }
+        sb.AppendLine($"problems: {failed}");
+        File.WriteAllText(Path.Combine(Core.Settings.DataDir, "hud_selftest.txt"), sb.ToString());
     }
 
     // DeadlockMeta.exe --test screenshot.png [clientHeight]: writes what the matcher sees on a saved screenshot.

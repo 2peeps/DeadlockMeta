@@ -27,6 +27,7 @@
                         WindowChrome.IsHitTestVisibleInChrome="True">
                 <RadioButton x:Name="TabHeroes" Content="ГЕРОИ" Style="{StaticResource Tab}" GroupName="tabs" IsChecked="True" Checked="Tab_Checked"/>
                 <RadioButton x:Name="TabCrosshairs" Content="ПРИЦЕЛЫ" Style="{StaticResource Tab}" GroupName="tabs" Checked="Tab_Checked"/>
+                <RadioButton x:Name="TabHud" Content="HUD" Style="{StaticResource Tab}" GroupName="tabs" Checked="Tab_Checked"/>
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" WindowChrome.IsHitTestVisibleInChrome="True">
                 <Button x:Name="UpdateButton" Visibility="Collapsed" Margin="0,16,12,0" Click="Update_Click"
@@ -198,6 +199,68 @@
             <TextBlock x:Name="CrossEmpty" Grid.Row="3" Foreground="{StaticResource Muted}" FontSize="15" TextWrapping="Wrap" TextAlignment="Center"
                        HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460" Visibility="Collapsed"/>
         </Grid>
+
+        <!-- HUD mod: timers, reload countdown and the frameless minimap inside the game; logic in MainWindow.Hud.cs -->
+        <ScrollViewer x:Name="HudView" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel Margin="28,24,28,24" MaxWidth="780" HorizontalAlignment="Left">
+            <TextBlock Text="МОД HUD В ИГРЕ" Style="{StaticResource Label}"/>
+            <TextBlock Foreground="{StaticResource Muted}" FontSize="13" Margin="0,8,0,0" TextWrapping="Wrap"
+                       Text="Таймеры важных событий у миникарты, секунды до конца перезарядки в прицеле, кулдаун буста зиплайна и миникарта без рамки — прямо в интерфейсе игры. Мод собирается из файлов твоей игры и сам пересобирается после патчей."/>
+            <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                <CheckBox x:Name="HudToggle" Style="{StaticResource Toggle}" Click="HudToggle_Click"/>
+                <TextBlock Text="Включить мод HUD" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </StackPanel>
+            <Border Margin="0,14,0,0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                    BorderThickness="1" CornerRadius="4" Padding="12,10,12,10">
+                <TextBlock x:Name="HudStatusText" FontSize="13.5" TextWrapping="Wrap"/>
+            </Border>
+
+            <TextBlock Text="ЧТО ПОКАЗЫВАТЬ" Style="{StaticResource Label}" Margin="0,30,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                <CheckBox x:Name="HudTimersToggle" Style="{StaticResource Toggle}" Click="HudOption_Click"/>
+                <TextBlock Text="Таймеры событий у миникарты" FontSize="14" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </StackPanel>
+            <TextBlock Foreground="{StaticResource Muted}" FontSize="12.5" Margin="56,4,0,0" TextWrapping="Wrap"
+                       Text="Столбиком слева от базы на миникарте, с иконками из игры: бафы на мосту (после 10:00 они приходят вместе с урной — один таймер), урна, разлом (пока он на карте, таймера нет; после взятия — окно следующего, через 6–8 минут) и мидбосс — только после того, как его убили, и пропадает, когда он возродился. Цвет меняется за 30 и за 10 секунд."/>
+            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <CheckBox x:Name="HudReloadToggle" Style="{StaticResource Toggle}" Click="HudOption_Click"/>
+                <TextBlock Text="Секунды до конца перезарядки в прицеле" FontSize="14" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <CheckBox x:Name="HudZipToggle" Style="{StaticResource Toggle}" Click="HudOption_Click"/>
+                <TextBlock Text="Кулдаун буста зиплайна под таймерами" FontSize="14" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <CheckBox x:Name="HudMapToggle" Style="{StaticResource Toggle}" Click="HudOption_Click"/>
+                <TextBlock Text="Миникарта без рамки, полупрозрачная" FontSize="14" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </StackPanel>
+            <TextBlock Text="ПРОЗРАЧНОСТЬ ФОНА КАРТЫ" Style="{StaticResource Label}" FontSize="12" Margin="56,12,0,0"/>
+            <StackPanel x:Name="HudOpacityPanel" Orientation="Horizontal" Margin="56,6,0,0">
+                <RadioButton Content="100%" Tag="100" Style="{StaticResource Segment}" GroupName="hudopacity" Click="HudOpacity_Click"/>
+                <RadioButton Content="75%" Tag="75" Style="{StaticResource Segment}" GroupName="hudopacity" Click="HudOpacity_Click"/>
+                <RadioButton Content="50%" Tag="50" Style="{StaticResource Segment}" GroupName="hudopacity" Click="HudOpacity_Click"/>
+            </StackPanel>
+            <TextBlock Text="РАЗМЕР МИНИКАРТЫ" Style="{StaticResource Label}" Margin="0,24,0,0"/>
+            <StackPanel x:Name="HudScalePanel" Orientation="Horizontal" Margin="0,8,0,0">
+                <RadioButton Content="КАК В ИГРЕ" Tag="100" Style="{StaticResource Segment}" GroupName="hudscale" Click="HudScale_Click"/>
+                <RadioButton Content="110%" Tag="110" Style="{StaticResource Segment}" GroupName="hudscale" Click="HudScale_Click"/>
+                <RadioButton Content="120%" Tag="120" Style="{StaticResource Segment}" GroupName="hudscale" Click="HudScale_Click"/>
+                <RadioButton Content="130%" Tag="130" Style="{StaticResource Segment}" GroupName="hudscale" Click="HudScale_Click"/>
+            </StackPanel>
+            <TextBlock Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,6,0,0" TextWrapping="Wrap"
+                       Text="Карта растёт вверх и влево от угла экрана, вместе с таймерами под ней. Меньше, чем в игре, не делается: значки станет трудно разглядеть."/>
+
+            <TextBlock Text="КАК ЭТО РАБОТАЕТ" Style="{StaticResource Label}" Margin="0,30,0,0"/>
+            <TextBlock Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,8,0,0" TextWrapping="Wrap"
+                       Text="Мод — это файл в папке игры game\citadel\addons и строка в gameinfo.gi, через которую игра подключает моды (так устроены все моды Deadlock). Программа меняет их только при закрытой игре, а перед правкой gameinfo.gi сохраняет его копию. Мод показывает только то, что уже есть в интерфейсе игры, и не меняет игровой процесс. Гарантий от Valve нет; если в игре что-то сломалось, выключи мод здесь."/>
+            <TextBlock Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,8,0,10" TextWrapping="Wrap"
+                       Text="Другие моды, которые меняют base_hud (основной файл интерфейса), будут мешать этому моду: из двух заработает только один."/>
+            <StackPanel Orientation="Horizontal">
+                <Button Content="ОТКРЫТЬ ПАПКУ МОДОВ" Style="{StaticResource FlatButton}" Click="OpenAddons_Click"/>
+                <Button Content="ОТКРЫТЬ КОПИИ НАСТРОЕК ИГРЫ" Style="{StaticResource FlatButton}" Margin="8,0,0,0" Click="OpenBackups_Click"/>
+            </StackPanel>
+        </StackPanel>
+        </ScrollViewer>
 
         <!-- Settings -->
         <ScrollViewer x:Name="SettingsView" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Focusable="False">

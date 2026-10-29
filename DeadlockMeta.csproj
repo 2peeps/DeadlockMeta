@@ -9,7 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\icon.ico</ApplicationIcon>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Product>Deadlock Meta</Product>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <PlatformTarget>x64</PlatformTarget>
@@ -29,12 +29,28 @@
 
   <ItemGroup>
     <!-- Reads the zstd-packed reticle codes the game's "share settings" window makes. -->
-    <PackageReference Include="ZstdSharp.Port" Version="0.8.5" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+    <!-- Reads the game's HUD files out of its VPKs and writes the HUD mod's compiled panorama files. -->
+    <PackageReference Include="ValveResourceFormat" Version="20.1.7467" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- Offline fallback for the crosshair catalog, which is normally downloaded from GitHub. -->
     <EmbeddedResource Include="crosshairs\catalog.json" LogicalName="catalog.json" />
+    <!-- The HUD mod's in-game script and its event schedule, compiled into the mod on install. -->
+    <EmbeddedResource Include="hud\dlmeta_hud.js" LogicalName="dlmeta_hud.js" />
+    <EmbeddedResource Include="hud\timers.json" LogicalName="timers.json" />
   </ItemGroup>
+
+  <!-- ValveResourceFormat brings native libraries for textures, shaders and models (about 20 MB); the HUD mod only
+       touches layouts, scripts and KV3, so they are left out of the exe. -->
+  <Target Name="DropUnusedNatives" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <RuntimeTargetsCopyLocalItems Remove="@(RuntimeTargetsCopyLocalItems)"
+        Condition="$([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.NuGetPackageId)').Contains('NativeAssets')) Or '%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'Vortice.SpirvCross' Or '%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'TinyEXR.NET' Or '%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'Blake3'" />
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)"
+        Condition="$([System.String]::Copy('%(NativeCopyLocalItems.NuGetPackageId)').Contains('NativeAssets')) Or '%(NativeCopyLocalItems.NuGetPackageId)' == 'Vortice.SpirvCross' Or '%(NativeCopyLocalItems.NuGetPackageId)' == 'TinyEXR.NET' Or '%(NativeCopyLocalItems.NuGetPackageId)' == 'Blake3'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

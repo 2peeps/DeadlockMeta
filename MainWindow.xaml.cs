@@ -58,6 +58,7 @@ public partial class MainWindow : Window
         }
         Check(RankPanel, app.Settings.HighBadge);
         InitCrosshairs();
+        InitHud();
         app.DataChanged += Refresh;
         app.UpdateAvailable += ShowUpdate;
         ShowUpdate();
@@ -155,30 +156,36 @@ public partial class MainWindow : Window
 
     public void ShowCrosshairsTab() => TabCrosshairs.IsChecked = true;
 
+    public void ShowHudTab() => TabHud.IsChecked = true;
+
+    FrameworkElement CheckedTabView() =>
+        TabCrosshairs.IsChecked == true ? CrosshairsView : TabHud.IsChecked == true ? HudView : HeroesView;
+
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
-        if (HeroesView == null || CrosshairsView == null) return;
-        ShowView(TabHeroes.IsChecked == true ? HeroesView : CrosshairsView);
+        if (HeroesView == null || CrosshairsView == null || HudView == null) return;
+        ShowView(CheckedTabView());
     }
 
     // The gear is not one of the tabs: it unchecks them while settings are open, and a tab click brings them back.
     void Gear_Click(object sender, RoutedEventArgs e)
     {
-        if (SettingsView.Visibility == Visibility.Visible) ShowView(TabHeroes.IsChecked == true ? HeroesView : CrosshairsView);
+        if (SettingsView.Visibility == Visibility.Visible) ShowView(CheckedTabView());
         else ShowView(SettingsView);
     }
 
     void ShowView(FrameworkElement view)
     {
-        foreach (var v in new FrameworkElement[] { HeroesView, CrosshairsView, SettingsView })
+        foreach (var v in new FrameworkElement[] { HeroesView, CrosshairsView, HudView, SettingsView })
             v.Visibility = v == view ? Visibility.Visible : Visibility.Collapsed;
         bool settings = view == SettingsView;
         // Cleared rather than set back, so the style's hover colour keeps working.
         if (settings) GearButton.Foreground = Res("Accent");
         else GearButton.ClearValue(ForegroundProperty);
         // A tab that is still checked cannot be clicked back to; clearing them while settings are open fixes that.
-        if (settings) TabHeroes.IsChecked = TabCrosshairs.IsChecked = false;
+        if (settings) TabHeroes.IsChecked = TabCrosshairs.IsChecked = TabHud.IsChecked = false;
         else if (view == CrosshairsView) OnCrosshairsShown();
+        else if (view == HudView) RefreshHud();
     }
 
     void Sort_Click(object sender, RoutedEventArgs e)

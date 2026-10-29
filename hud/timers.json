@@ -1,0 +1,11 @@
+{
+  "comment": "Timers for the HUD mod, in seconds. bossRespawn: from a mid boss kill to its return, for the first, second and later kills; the mid boss timer shows only after it was killed, and the game's own countdown corrects it when the game shows one. events: match-clock timers. every: repeats on the clock; window: spawns somewhere in [first, first + window], shown from showFrom; hideFrom: stop showing from then (after 10:00 the bridge buffs come with every urn, so the urn timer stands for both); icon: the game image in front of the time; marker + respawn: the event's minimap marker class; while it is on the map the timer hides, and once it is gone the next spawn is respawn[0]..respawn[1] seconds later. Checked against deadlockitembuilder.com/timers, build 6722 (October 2026).",
+  "soon": 30,
+  "alert": 10,
+  "bossRespawn": [420, 360, 300],
+  "events": [
+    { "id": "bridge", "label": "БАФЫ", "icon": "s2r://panorama/images/minimap/powerup_movement.vsvg", "first": 300, "every": 300, "hideFrom": 600 },
+    { "id": "urn", "label": "УРНА", "icon": "s2r://panorama/images/minimap/soul_jar_marker_psd.vtex", "first": 600, "every": 300, "showFrom": 300 },
+    { "id": "rift", "label": "РАЗЛОМ", "icon": "s2r://panorama/images/minimap/minimap_icon_koth_png.vtex", "first": 600, "window": 120, "showFrom": 420, "marker": "capture_point", "respawn": [360, 480] }
+  ]
+}

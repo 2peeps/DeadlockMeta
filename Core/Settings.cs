@@ -73,6 +73,20 @@ public sealed class Settings
     public bool CrosshairAllHeroes { get; set; } = true;
     /// <summary>After the game closes, puts the chosen reticle back if the game changed it (e.g. after a patch).</summary>
     public bool CrosshairGuard { get; set; } = true;
+    /// <summary>The in-game HUD mod (timers, reload countdown, frameless minimap) is wanted in the game.</summary>
+    public bool HudEnabled { get; set; }
+    public bool HudTimers { get; set; } = true;
+    public bool HudReload { get; set; } = true;
+    public bool HudZipline { get; set; } = true;
+    public bool HudCleanMap { get; set; } = true;
+    /// <summary>Minimap background opacity in percent when the frame is removed.</summary>
+    public int HudMapOpacity { get; set; } = 75;
+    /// <summary>Minimap size in percent of the game's own: 100 (as in the game) up to 130.</summary>
+    public int HudMapScale { get; set; } = 100;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public HudOptions HudOptions => new(HudTimers, HudReload, HudZipline, HudCleanMap, HudMapOpacity, HudMapScale);
+
     /// <summary>Random id for the crosshair popularity counts, so one install counts once; nothing else is sent.</summary>
     public string InstallId { get; set; } = Guid.NewGuid().ToString("N");
 
